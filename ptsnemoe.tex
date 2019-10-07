@@ -1,49 +1,21 @@
-% This is samplepaper.tex, a sample paper demonstrating the
-% LLNCS class package for the SMU Data Science Review Journal;
-%
-% This sample paper is a modified version of samplepaper.tex for
-% the Springer Computer Science proceedings; Version 2.20 of 2017/10/04
-%
-% Version 1.0 2019/06/03
-
-% Use the llncs.cls formatting
 \documentclass{llncs}
 
-% Set the packages for use within the document. The following
-% packages should be included.  Additional packages that do not
-% conflict with these packages or change the llncs class formatting
-% may be used.  Packages that do change the formatting are
-% not allowed.
-\usepackage{graphicx} % Used for displaying a sample figure.
-% If possible, figure files should be included in EPS format.
-% PDF format is also acceptable. JPEG  will work, but some of
-% them are downsampled resulting in fuzzy images.
-\usepackage{booktabs} % Better horizontal rules in tables
-\usepackage{multirow} % Better combined rows in tables
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
 
-% The title of the paper
 \title{Spatially Sparse Mixture of Experts}
 
-% The complete list of authors with their affiliations
+
 \author{
-Daniel Byrne\inst{1} \and
-John Santerre\inst{1,2}
+ Daniel Byrne\inst{1} \and
+ John Santerre\inst{1}
 }
 
-% The Institutes and emails associated with each author. All students
-% should use their MSDS affiliation or a generic SMU affiliation.
-% Advisors should use their appropriate affiliation. Note that advisors
-% are NOT referenced or otherwise denoted as advisors. Advisors
-% are simply co-authors on the paper.
-% Note that the emails for the MSDS affiliation, show how
-% to list emails that have the same organization portion.
 \institute{
 Master of Science in Data Science, Southern Methodist University,
 Dallas TX 75275 USA
-\email{\{byrned,santeerej\}@smu.edu} \and
-Springer Heidelberg, Tiergartenstr. 17, 69121 Heidelberg, Germany
-\email{lncs@springer.com} \\
-\url{http://www.springer.com/gp/computer-science/lncs}
+\email{\{byrned,santeerej\}@smu.edu}
 }
 
 % Begin the document
@@ -51,16 +23,12 @@ Springer Heidelberg, Tiergartenstr. 17, 69121 Heidelberg, Germany
 
 \maketitle              % typeset the title and author of the paper
 
-% Reset the footnote counter
 \setcounter{footnote}{0}
-% The abstract environment uses the \begin{} and \end{} constructs to
-% denote the beginning and ending of the abstract contents.
 \begin{abstract}
 
   The difficulty in training and usig deep neural networks begins and ends with the fact that the design principle on which many are founded, fullly connected layers (FFL), contributes to a quadratic increase in the number of calculable parameters as the number of input dimensions and parameters increases. Traditionally, researchers have simply increased the number of parameters to increase the capacity of the neural network to learn representations. However, research into sparsely connected networks suggests that this need not be the case.  Furthermore, research into small-world networks and biological systems suggests that the spatially local expert clusters can combine in situationally uniquie ways with distant expert clusters through sparse long distance connections to form conditionally active subnetworks adept at solving complex problems in a computationally efficient way.  This paper introduces a new neural network architecture that compresses traditional representations using a t-SNE gated Mixture of Sparse Experts to enforce expert cluster specializations.
 
-% Keywords may be used, but they are not required.
-%\keywords{First keyword  \and Second keyword \and Another keyword.}
+\keywords{DNN\and t-SNE\and Mixture of Experts \and pruning \and sparse \and brain modeling \and small-world}
 \end{abstract}
 
 % Sections are denoted by the use of the \section{Section Name}
@@ -112,7 +80,7 @@ Gated subnetworks are sparsely initialized using methods devised in StochasticNe
 
 Parametric T-SNE is used to gate the MoE FF networks so that spatial clusters can form and specialize on a represenatation that can then be used referentially by weakly connected distant clusters traied as experts in other domains. Furthermore allowing t-SNE to drive the gates allows us embed similarities in training data samples on top of the labels already attached to the data thus effectively applying additional classification labels to our data without any added effort.
 
-The result is a spatially aware, sparsely connected and initiated, mixture of local experts with sparsely connected remote experts which allows for contributions from far flung expert networks through minimal influence connections.~\cite{Caswell:2016aa,Krizhevsky:2011aa,Sporns:2004aa,Kiyono:2019aa,Hassibi:1993aa,LeCun:1990aa,Zorins:2015aa,Samsonovich:2005aa,Morris:2003aa,Han:2015aa,Huang:2017aa,Zhigulin:2004aa,Hinton:2012aa,Mocanu:2018aa,Wan:2013aa,Shazeer:2017aa,Jacobs_1991,Cayco-Gajic:2017aa,SPORNS_2004,DBLP:journals/corr/FernandoBBZHRPW17,Bassett:2006aa,cite-key}
+The result is a spatially aware, sparsely connected and initiated, mixture of local experts with sparsely connected remote experts which allows for contributions from far flung expert networks through minimal influence connections.~\cite{Caswell:2016aa,Krizhevsky:2011aa,Sporns:2004aa,Kiyono:2019aa,Hassibi:1993aa,LeCun:1990aa,Zorins:2015aa,Samsonovich:2005aa,Morris:2003aa,Watts:1998aa,Han:2015aa,Huang:2017aa,Srivastava:2014aa,Zhigulin:2004aa,Hinton:2012aa,Mocanu:2018aa,Wan:2013aa,Shazeer:2017aa,Jacobs_1991,Cayco-Gajic:2017aa,SPORNS_2004,DBLP:journals/corr/FernandoBBZHRPW17,NIPS2015_5784,Bassett:2006aa,cite-key}
 
 
 % ---- Bibliography ----

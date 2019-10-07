@@ -30,6 +30,13 @@ Han, S., Mao, H., Dally, W.J.: Deep compression: Compressing deep neural
   networks with pruning, trained quantization and huffman coding. arXiv
   preprint arXiv:1510.00149  (2015)
 
+\bibitem{NIPS2015_5784}
+Han, S., Pool, J., Tran, J., Dally, W.: Learning both weights and connections
+  for efficient neural network. In: Cortes, C., Lawrence, N.D., Lee, D.D.,
+  Sugiyama, M., Garnett, R. (eds.) Advances in Neural Information Processing
+  Systems 28, pp. 1135--1143. Curran Associates, Inc. (2015),
+  \url{http://papers.nips.cc/paper/5784-learning-both-weights-and-connections-for-efficient-neural-network.pdf}
+
 \bibitem{Hassibi:1993aa}
 Hassibi, B., Stork, D.G., Wolff, G.J.: Optimal brain surgeon and general
   network pruning. pp. 293--299. IEEE (1993)
@@ -98,9 +105,18 @@ SPORNS, O., CHIALVO, D., KAISER, M., HILGETAG, C.: Organization, development
 Sporns, O., K{\"o}tter, R.: Motifs in brain networks. PLoS biology
   \textbf{2}(11), ~e369 (2004)
 
+\bibitem{Srivastava:2014aa}
+Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., Salakhutdinov, R.:
+  Dropout: a simple way to prevent neural networks from overfitting. The
+  journal of machine learning research  \textbf{15}(1),  1929--1958 (2014)
+
 \bibitem{Wan:2013aa}
 Wan, L., Zeiler, M., Zhang, S., Le~Cun, Y., Fergus, R.: Regularization of
   neural networks using dropconnect. pp. 1058--1066 (2013)
+
+\bibitem{Watts:1998aa}
+Watts, D.J., Strogatz, S.H.: Collective dynamics of `small-world'networks.
+  nature  \textbf{393}(6684), ~440 (1998)
 
 \bibitem{Zhigulin:2004aa}
 Zhigulin, V.P.: Dynamical motifs: building blocks of complex dynamics in

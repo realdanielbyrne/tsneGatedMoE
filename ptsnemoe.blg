@@ -10,45 +10,45 @@ Warning--empty booktitle in Krizhevsky:2011aa
 Warning--empty booktitle in LeCun:1990aa
 Warning--empty booktitle in Wan:2013aa
 Warning--empty booktitle in Zorins:2015aa
-You've used 22 entries,
+You've used 25 entries,
             2850 wiz_defined-function locations,
-            765 strings with 9423 characters,
-and the built_in function-call counts, 13718 in all, are:
-= -- 1123
-> -- 449
-< -- 31
-+ -- 185
-- -- 162
-* -- 903
-:= -- 1718
-add.period$ -- 28
-call.type$ -- 22
-change.case$ -- 147
+            792 strings with 10230 characters,
+and the built_in function-call counts, 15906 in all, are:
+= -- 1300
+> -- 526
+< -- 36
++ -- 215
+- -- 189
+* -- 1052
+:= -- 1985
+add.period$ -- 32
+call.type$ -- 25
+change.case$ -- 169
 chr.to.int$ -- 0
-cite$ -- 29
-duplicate$ -- 1225
-empty$ -- 1170
-format.name$ -- 183
-if$ -- 2982
+cite$ -- 32
+duplicate$ -- 1417
+empty$ -- 1355
+format.name$ -- 214
+if$ -- 3462
 int.to.chr$ -- 0
-int.to.str$ -- 22
-missing$ -- 248
-newline$ -- 72
-num.names$ -- 44
-pop$ -- 462
+int.to.str$ -- 25
+missing$ -- 287
+newline$ -- 81
+num.names$ -- 52
+pop$ -- 527
 preamble$ -- 1
-purify$ -- 125
+purify$ -- 142
 quote$ -- 0
-skip$ -- 399
+skip$ -- 464
 stack$ -- 0
-substring$ -- 779
-swap$ -- 717
-text.length$ -- 31
+substring$ -- 913
+swap$ -- 843
+text.length$ -- 36
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 88
+type$ -- 100
 warning$ -- 7
-while$ -- 108
-width$ -- 24
-write$ -- 234
+while$ -- 126
+width$ -- 27
+write$ -- 266
 (There were 7 warnings)
