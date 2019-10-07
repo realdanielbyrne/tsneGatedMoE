@@ -1,14 +1,14 @@
 # Fdb version 3
-["bibtex ptsnemoe"] 1570451326 "ptsnemoe.aux" "ptsnemoe.bbl" "ptsnemoe" 1570458083
+["bibtex ptsnemoe"] 1570458325 "ptsnemoe.aux" "ptsnemoe.bbl" "ptsnemoe" 1570458450
   "./splncs04.bst" 1521136946 33694 182740d5d784dd29ee55be34dddd4ccc ""
-  "ptsnemoe.aux" 1570458083 1495 8963e17ee616f299f86c820a3aae687f "pdflatex"
+  "ptsnemoe.aux" 1570458450 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
   "ptsnemoe.bib" 1570450873 16195 dc3920fb1ba5eac9c0ec5afbac045a58 ""
   (generated)
-  "ptsnemoe.bbl"
   "ptsnemoe.blg"
-["pdflatex"] 1570458083 "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf" "ptsnemoe" 1570458083
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux" 1570458083 1495 8963e17ee616f299f86c820a3aae687f ""
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" 1570458083 12283 e834f0144064f0b028064b198a6991e9 ""
+  "ptsnemoe.bbl"
+["pdflatex"] 1570458450 "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf" "ptsnemoe" 1570458450
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux" 1570458450 1535 6892e040ad0b25e84090fe9b2889c7bc ""
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" 1570458449 12346 b388cb55b38c3d898cea4f202a0c2f85 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx9.tfm" 1136768653 1328 5442e22a7072966dbaf88ca900acf3f0 ""
@@ -54,12 +54,12 @@
   "/usr/local/texlive/2019/texmf-var/web2c/pdftex/pdflatex.fmt" 1557342086 4259635 562fc36ec496993777a6c428d8bfb811 ""
   "/usr/local/texlive/2019/texmf.cnf" 1557341546 577 d150fef99ac436ad1156e86b0892f6ef ""
   "llncs.cls" 1521136900 43467 a21466011e5ed5d4c3f1d5a9af897395 ""
-  "ptsnemoe.aux" 1570458083 1495 8963e17ee616f299f86c820a3aae687f "pdflatex"
-  "ptsnemoe.bbl" 1570451326 5661 74fd64a19d8983f5f6704456021d4177 "bibtex ptsnemoe"
-  "ptsnemoe.tex" 1570458083 12283 e834f0144064f0b028064b198a6991e9 ""
+  "ptsnemoe.aux" 1570458450 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
+  "ptsnemoe.bbl" 1570458325 5661 74fd64a19d8983f5f6704456021d4177 "bibtex ptsnemoe"
+  "ptsnemoe.tex" 1570458449 12346 b388cb55b38c3d898cea4f202a0c2f85 ""
   (generated)
   "ptsnemoe.log"
-  "ptsnemoe.pdf"
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.log"
   "ptsnemoe.aux"
   "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf"
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.log"
+  "ptsnemoe.pdf"
