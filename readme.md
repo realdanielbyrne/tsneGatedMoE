@@ -1,39 +1,10 @@
-\documentclass{llncs}
+# Parametric t-SNE Gated, Stochastically Initiated, Mixture of Sparse Experts
 
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{multirow}
+## Abstract
 
-\title{Parametric t-SNE Gated, Stochastically Initiated, Mixture of Sparse Experts}
+The difficulty in training and using deep neural networks begins and ends with the fact that the design principle on which many are founded, fullly connected layers (FFL), contributes to a quadratic increase in the number of calculable parameters as the number of input dimensions and parameters increases. Traditionally, researchers have simply increased the number of parameters to increase the capacity and learning ability of the neural network. However, research into sparsely connected networks and pruning suggests that this need not be the case.  Furthermore, research into small-world networks and biological systems suggests that spatially aware local expert clusters can combine in situationally uniquie ways with distant expert clusters through sparse long distance connections to form conditionally active subnetworks adept at solving complex problems in a computationally efficient way. This paper introduces a new neural network architecture, Parametric t-SNE Gated, Stochastically Initiated, Mixture of Sparse Experts, that combines these insights into a cohesive model.  The model uses a 2D Parametric t-SNE gating network to drive the gate inputs of a mixture of sparsely interconnected expert clusters. These clusters in contrast to traditional Mixture of Experts networks, are not mutually exclusive and independant, but share a low fanout collection of interexpert routes.  These expert clusters themselves are additionaly tuned locally to limit the number of interferring intracluster connections. The result, we hope, is a spatially aware, sparsely connected and initiated, mixture of local experts with distant connections allowing for information sharing from far flung expert networks through minimal influence connections that should be less dense and less computationally complex than a fully connected comparative network.\
 
-
-\author{
- Daniel Byrne\inst{1} \and
- John Santerre\inst{1}
-}
-
-\institute{
-Master of Science in Data Science, Southern Methodist University,
-Dallas TX 75275 USA
-\email{\{byrned,santeerej\}@smu.edu}
-}
-
-% Begin the document
-\begin{document}
-
-\maketitle              % typeset the title and author of the paper
-
-\setcounter{footnote}{0}
-\begin{abstract}
-
-The difficulty in training and using deep neural networks begins and ends with the fact that the design principle on which many are founded, fullly connected layers (FFL), contributes to a quadratic increase in the number of calculable parameters as the number of input dimensions and parameters increases. Traditionally, researchers have simply increased the number of parameters to increase the capacity and learning ability of the neural network. However, research into sparsely connected networks and pruning suggests that this need not be the case.  Furthermore, research into small-world networks and biological systems suggests that spatially aware local expert clusters can combine in situationally uniquie ways with distant expert clusters through sparse long distance connections to form conditionally active subnetworks adept at solving complex problems in a computationally efficient way. This paper introduces a new neural network architecture, Parametric t-SNE Gated, Stochastically Initiated, Mixture of Sparse Experts, that combines these insights into a cohesive model.  The model uses a 2D Parametric t-SNE gating network to drive the gate inputs of a mixture of sparsely interconnected expert clusters. These clusters in contrast to traditional Mixture of Experts networks, are not mutually exclusive and independant, but share a low fanout collection of interexpert routes.  These expert clusters themselves are additionaly tuned locally to limit the number of interferring intracluster connections. The result, we hope, is a spatially aware, sparsely connected and initiated, mixture of local experts with distant connections allowing for information sharing from far flung expert networks through minimal influence connections that should be less dense and less computationally complex than a fully connected comparative network.
-
-\keywords{DNN\and t-SNE\and Mixture of Experts \and pruning \and sparse \and brain modeling \and small-world}
-\end{abstract}
-
-% Sections are denoted by the use of the \section{Section Name}
-% command -- where "Section Name" is the name you give to the Section.
-\section{Introduction}
+## Introduction
 
 Deep learning’s explosive growth in learning over the past few years has been fueled by the technique’s success at embedding high dimensional data into multilevel encoded representations of increasing abstraction to solve complex functions and or to model natural processes such as Natural Language Processing (NLP) and Computer Vision. In common feed forward Deep Neural Networks, layers are typically fully connected.  That is every node at any one layer is connected to every other node in adjacent layers.  This fully connected nature supplies each successive layer with any and all embeddings of its preceding layer in any possible combination. It is then the task of the training procedure to effectively reduce this over abundance of overlapping connections by iteratively applying the delta rule to adjust the weights on the connections.  The means tend to cluster around zero indicating that a large number of connections are redundant or destructively interfering causing the training procedure to zero them out.  The net result of training then is a collection of weights and neurons that when applied an input stimulus effectively creates an alternative representation or classification of the input data at the network's output.
 
@@ -81,16 +52,4 @@ Also, in contrast to traditional Mixture of Experts architectures which isolates
 
 Clusters are also sparsely initialized using methods devised in StochasticNet.
 
-The result, we hope, is a spatially aware, sparsely connected and initiated, mixture of local experts with distant connections allowing for information sharing from far flung expert networks through minimal influence connections that should be less dense and less computationally complex than a fully connected comparative network.~\cite{Caswell:2016aa,Krizhevsky:2011aa,Sporns:2004aa,Kiyono:2019aa,Hassibi:1993aa,LeCun:1990aa,Zorins:2015aa,Samsonovich:2005aa,Morris:2003aa,Watts:1998aa,Han:2015aa,Huang:2017aa,Srivastava:2014aa,Zhigulin:2004aa,Hinton:2012aa,Mocanu:2018aa,Wan:2013aa,Shazeer:2017aa,Jacobs_1991,Cayco-Gajic:2017aa,SPORNS_2004,DBLP:journals/corr/FernandoBBZHRPW17,NIPS2015_5784,Bassett:2006aa,cite-key}
-
-% ---- Bibliography ----
-%
-% BibTeX users should specify bibliography style 'splncs04'.
-% References will then be sorted according to alphabetical
-% and formatted in the correct style.
-%
- \bibliographystyle{splncs04}
- \bibliography{ptsnemoe}
-
-% End the document
-\end{document}
+The result, we hope, is a spatially aware, sparsely connected and initiated, mixture of local experts with distant connections allowing for information sharing from far flung expert networks through minimal influence connections that should be less dense and less computationally complex than a fully connected comparative network.
