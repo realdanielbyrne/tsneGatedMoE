@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  7 OCT 2019 07:29
+This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019) (preloaded format=pdflatex 2019.5.8)  7 OCT 2019 09:21
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -276,7 +276,7 @@ Underfull \hbox (badness 1009) in paragraph at lines 99--103
 \OT1/cmr/m/n/9 de-vel-op-ment and func-tion of com-plex brain net-works. Trends in Cog-ni-tive
  []
 
-) [5] (/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux)
+[5]) [6] (/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux)
 
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
@@ -284,16 +284,16 @@ LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 Here is how much of TeX's memory you used:
  2000 strings out of 492616
  28379 string characters out of 6129482
- 100873 words of memory out of 5000000
+ 101873 words of memory out of 5000000
  5908 multiletter control sequences out of 15000+600000
  5879 words of font info for 22 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 41i,5n,25p,1249b,241s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 41i,5n,25p,1868b,243s stack positions out of 5000i,500n,10000p,200000b,80000s
 </usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/2019/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt9.pfb>
-Output written on /Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf (5 pages, 107765 bytes).
+Output written on /Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf (6 pages, 108931 bytes).
 PDF statistics:
- 48 PDF objects out of 1000 (max. 8388607)
- 33 compressed objects within 1 object stream
+ 51 PDF objects out of 1000 (max. 8388607)
+ 35 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
  1 words of extra memory for PDF output out of 10000 (max. 10000000)
 
