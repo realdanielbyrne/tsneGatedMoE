@@ -2,47 +2,53 @@ This is BibTeX, Version 0.99d (TeX Live 2019)
 Capacity: max_strings=100000, hash_size=100000, hash_prime=85009
 The top-level auxiliary file: ptsnemoe.aux
 The style file: splncs04.bst
-I found no \citation commands---while reading file ptsnemoe.aux
 Database file #1: ptsnemoe.bib
-You've used 0 entries,
+Warning--empty booktitle in Hassibi:1993aa
+Warning--empty booktitle in Huang:2017aa
+Warning--empty booktitle in Kiyono:2019aa
+Warning--empty booktitle in Krizhevsky:2011aa
+Warning--empty booktitle in LeCun:1990aa
+Warning--empty booktitle in Wan:2013aa
+Warning--empty booktitle in Zorins:2015aa
+You've used 22 entries,
             2850 wiz_defined-function locations,
-            593 strings with 4478 characters,
-and the built_in function-call counts, 24 in all, are:
-= -- 0
-> -- 0
-< -- 0
-+ -- 0
-- -- 0
-* -- 2
-:= -- 7
-add.period$ -- 0
-call.type$ -- 0
-change.case$ -- 0
+            765 strings with 9423 characters,
+and the built_in function-call counts, 13718 in all, are:
+= -- 1123
+> -- 449
+< -- 31
++ -- 185
+- -- 162
+* -- 903
+:= -- 1718
+add.period$ -- 28
+call.type$ -- 22
+change.case$ -- 147
 chr.to.int$ -- 0
-cite$ -- 0
-duplicate$ -- 0
-empty$ -- 1
-format.name$ -- 0
-if$ -- 1
+cite$ -- 29
+duplicate$ -- 1225
+empty$ -- 1170
+format.name$ -- 183
+if$ -- 2982
 int.to.chr$ -- 0
-int.to.str$ -- 0
-missing$ -- 0
-newline$ -- 6
-num.names$ -- 0
-pop$ -- 0
+int.to.str$ -- 22
+missing$ -- 248
+newline$ -- 72
+num.names$ -- 44
+pop$ -- 462
 preamble$ -- 1
-purify$ -- 0
+purify$ -- 125
 quote$ -- 0
-skip$ -- 1
+skip$ -- 399
 stack$ -- 0
-substring$ -- 0
-swap$ -- 0
-text.length$ -- 0
+substring$ -- 779
+swap$ -- 717
+text.length$ -- 31
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 0
-warning$ -- 0
-while$ -- 0
-width$ -- 0
-write$ -- 5
-(There was 1 error message)
+type$ -- 88
+warning$ -- 7
+while$ -- 108
+width$ -- 24
+write$ -- 234
+(There were 7 warnings)

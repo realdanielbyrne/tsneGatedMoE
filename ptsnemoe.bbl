@@ -1,6 +1,114 @@
-\begin{thebibliography}{}
+\begin{thebibliography}{10}
 \providecommand{\url}[1]{\texttt{#1}}
 \providecommand{\urlprefix}{URL }
 \providecommand{\doi}[1]{https://doi.org/#1}
+
+\bibitem{Bassett:2006aa}
+Bassett, D.S., Bullmore, E.: Small-world brain networks. The Neuroscientist
+  \textbf{12}(6),  512--523 (2019/10/07 2006). \doi{10.1177/1073858406293182},
+  \url{https://doi.org/10.1177/1073858406293182}
+
+\bibitem{Caswell:2016aa}
+Caswell, I., Shen, C., Wang, L.: Loopy neural nets: Imitating feedback loops in
+  the human brain. Tech. Report  (2016)
+
+\bibitem{Cayco-Gajic:2017aa}
+Cayco-Gajic, N.A., Clopath, C., Silver, R.A.: Sparse synaptic connectivity is
+  required for decorrelation and pattern separation in feedforward networks.
+  Nature Communications  \textbf{8}(1), ~1116 (2017).
+  \doi{10.1038/s41467-017-01109-y},
+  \url{https://doi.org/10.1038/s41467-017-01109-y}
+
+\bibitem{DBLP:journals/corr/FernandoBBZHRPW17}
+Fernando, C., Banarse, D., Blundell, C., Zwols, Y., Ha, D., Rusu, A.A.,
+  Pritzel, A., Wierstra, D.: Pathnet: Evolution channels gradient descent in
+  super neural networks. CoRR  \textbf{abs/1701.08734} (2017),
+  \url{http://arxiv.org/abs/1701.08734}
+
+\bibitem{Han:2015aa}
+Han, S., Mao, H., Dally, W.J.: Deep compression: Compressing deep neural
+  networks with pruning, trained quantization and huffman coding. arXiv
+  preprint arXiv:1510.00149  (2015)
+
+\bibitem{Hassibi:1993aa}
+Hassibi, B., Stork, D.G., Wolff, G.J.: Optimal brain surgeon and general
+  network pruning. pp. 293--299. IEEE (1993)
+
+\bibitem{Hinton:2012aa}
+Hinton, G.E., Srivastava, N., Krizhevsky, A., Sutskever, I., Salakhutdinov,
+  R.R.: Improving neural networks by preventing co-adaptation of feature
+  detectors. arXiv preprint arXiv:1207.0580  (2012)
+
+\bibitem{Huang:2017aa}
+Huang, G., Liu, Z., Van Der~Maaten, L., Weinberger, K.Q.: Densely connected
+  convolutional networks. pp. 4700--4708 (2017)
+
+\bibitem{Jacobs_1991}
+Jacobs, R.A., Jordan, M.I., Nowlan, S.J., Hinton, G.E.: Adaptive mixtures of
+  local experts. Neural Computation  \textbf{3}(1),  79--87 (Feb 1991).
+  \doi{10.1162/neco.1991.3.1.79},
+  \url{http://dx.doi.org/10.1162/neco.1991.3.1.79}
+
+\bibitem{Kiyono:2019aa}
+Kiyono, S., Suzuki, J., Inui, K.: Mixture of expert/imitator networks: Scalable
+  semi-supervised learning framework. vol.~33, pp. 4073--4081 (2019)
+
+\bibitem{Krizhevsky:2011aa}
+Krizhevsky, A., Hinton, G.E.: Using very deep autoencoders for content-based
+  image retrieval. vol.~1, p.~2 (2011)
+
+\bibitem{LeCun:1990aa}
+LeCun, Y., Denker, J.S., Solla, S.A.: Optimal brain damage. pp. 598--605 (1990)
+
+\bibitem{Mocanu:2018aa}
+Mocanu, D.C., Mocanu, E., Stone, P., Nguyen, P.H., Gibescu, M., Liotta, A.:
+  Scalable training of artificial neural networks with adaptive sparse
+  connectivity inspired by network science. Nature communications
+  \textbf{9}(1), ~2383 (2018)
+
+\bibitem{cite-key}
+Mocanu, D.C., Mocanu, E., Stone, P., Nguyen, P.H., Gibescu, M., Liotta, A.:
+  Scalable training of artificial neural networks with adaptive sparse
+  connectivity inspired by network science. Nature Communications
+  \textbf{9}(1), ~2383 (2018). \doi{10.1038/s41467-018-04316-3},
+  \url{https://doi.org/10.1038/s41467-018-04316-3}
+
+\bibitem{Morris:2003aa}
+Morris, G., Nevet, A., Bergman, H.: Anatomical funneling, sparse connectivity
+  and redundancy reduction in the neural networks of the basal ganglia. Journal
+  of Physiology-Paris  \textbf{97}(4-6),  581--589 (2003)
+
+\bibitem{Samsonovich:2005aa}
+Samsonovich, A.V., Ascoli, G.A.: A simple neural network model of the
+  hippocampus suggesting its pathfinding role in episodic memory retrieval.
+  Learning \& Memory  \textbf{12}(2),  193--208 (2005)
+
+\bibitem{Shazeer:2017aa}
+Shazeer, N., Mirhoseini, A., Maziarz, K., Davis, A., Le, Q., Hinton, G., Dean,
+  J.: Outrageously large neural networks: The sparsely-gated mixture-of-experts
+  layer. arXiv preprint arXiv:1701.06538  (2017)
+
+\bibitem{SPORNS_2004}
+SPORNS, O., CHIALVO, D., KAISER, M., HILGETAG, C.: Organization, development
+  and function of complex brain networks. Trends in Cognitive Sciences
+  \textbf{8}(9),  418--425 (Sep 2004). \doi{10.1016/j.tics.2004.07.008},
+  \url{http://dx.doi.org/10.1016/j.tics.2004.07.008}
+
+\bibitem{Sporns:2004aa}
+Sporns, O., K{\"o}tter, R.: Motifs in brain networks. PLoS biology
+  \textbf{2}(11), ~e369 (2004)
+
+\bibitem{Wan:2013aa}
+Wan, L., Zeiler, M., Zhang, S., Le~Cun, Y., Fergus, R.: Regularization of
+  neural networks using dropconnect. pp. 1058--1066 (2013)
+
+\bibitem{Zhigulin:2004aa}
+Zhigulin, V.P.: Dynamical motifs: building blocks of complex dynamics in
+  sparsely connected random networks. Physical review letters  \textbf{92}(23),
+   238701 (2004)
+
+\bibitem{Zorins:2015aa}
+Zorins, A., Grabusts, P.: Artificial neural networks and human brain: Survey of
+  improvement possibilities of learning. vol.~228, p.~231 (2015)
 
 \end{thebibliography}
