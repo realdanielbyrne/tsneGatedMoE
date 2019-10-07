@@ -1,14 +1,14 @@
 # Fdb version 3
-["bibtex ptsnemoe"] 1570458325 "ptsnemoe.aux" "ptsnemoe.bbl" "ptsnemoe" 1570458705
-  "./splncs04.bst" 1521136946 33694 182740d5d784dd29ee55be34dddd4ccc ""
-  "ptsnemoe.aux" 1570458705 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
+["bibtex ptsnemoe"] 1570466473 "ptsnemoe.aux" "ptsnemoe.bbl" "ptsnemoe" 1570466473
+  "./splncs04.bst" 1570466472 32146 ee21ae2a29028dc8ad842a97200982c7 ""
+  "ptsnemoe.aux" 1570466473 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
   "ptsnemoe.bib" 1570450873 16195 dc3920fb1ba5eac9c0ec5afbac045a58 ""
   (generated)
   "ptsnemoe.blg"
   "ptsnemoe.bbl"
-["pdflatex"] 1570458705 "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf" "ptsnemoe" 1570458705
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux" 1570458705 1535 6892e040ad0b25e84090fe9b2889c7bc ""
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" 1570458705 12351 ee2208d303874d5b9cb25f9c718ac021 ""
+["pdflatex"] 1570466473 "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf" "ptsnemoe" 1570466473
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.aux" 1570466473 1535 6892e040ad0b25e84090fe9b2889c7bc ""
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.tex" 1570466472 12359 1c373a44597bef5ea64b239fb343fd0a ""
   "/usr/local/texlive/2019/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx9.tfm" 1136768653 1328 5442e22a7072966dbaf88ca900acf3f0 ""
@@ -53,13 +53,13 @@
   "/usr/local/texlive/2019/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1557342064 3277517 23507ed665b4dd9046f0f2a94bbef2be ""
   "/usr/local/texlive/2019/texmf-var/web2c/pdftex/pdflatex.fmt" 1557342086 4259635 562fc36ec496993777a6c428d8bfb811 ""
   "/usr/local/texlive/2019/texmf.cnf" 1557341546 577 d150fef99ac436ad1156e86b0892f6ef ""
-  "llncs.cls" 1521136900 43467 a21466011e5ed5d4c3f1d5a9af897395 ""
-  "ptsnemoe.aux" 1570458705 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
-  "ptsnemoe.bbl" 1570458325 5661 74fd64a19d8983f5f6704456021d4177 "bibtex ptsnemoe"
-  "ptsnemoe.tex" 1570458705 12351 ee2208d303874d5b9cb25f9c718ac021 ""
+  "llncs.cls" 1570466472 42249 b08ec23e994470d7d8fc268d245cf555 ""
+  "ptsnemoe.aux" 1570466473 1535 6892e040ad0b25e84090fe9b2889c7bc "pdflatex"
+  "ptsnemoe.bbl" 1570466473 5661 74fd64a19d8983f5f6704456021d4177 "bibtex ptsnemoe"
+  "ptsnemoe.tex" 1570466472 12359 1c373a44597bef5ea64b239fb343fd0a ""
   (generated)
-  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf"
+  "ptsnemoe.pdf"
   "ptsnemoe.log"
   "ptsnemoe.aux"
   "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.log"
-  "ptsnemoe.pdf"
+  "/Users/daniel/GitHub/tsneGatedMoE/ptsnemoe.pdf"
