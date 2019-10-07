@@ -1,14 +1,14 @@
 # Fdb version 3
-["bibtex samplepaper"] 1570429164 "samplepaper.aux" "samplepaper.bbl" "samplepaper" 1570429165
+["bibtex samplepaper"] 1570429164 "samplepaper.aux" "samplepaper.bbl" "samplepaper" 1570437382
   "./splncs04.bst" 1521136946 33694 182740d5d784dd29ee55be34dddd4ccc ""
   "samplebib.bib" 1559601647 4360 7289befaf18ea35b0a2549f1f3c6cb13 ""
   "samplepaper.aux" 1570429165 1401 9b542176b82bb9cd0c692e84bb2dbdf9 "pdflatex"
   (generated)
   "samplepaper.blg"
   "samplepaper.bbl"
-["pdflatex"] 1570429164 "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.tex" "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.pdf" "samplepaper" 1570429165
+["pdflatex"] 1570429164 "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.tex" "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.pdf" "samplepaper" 1570437382
   "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.aux" 1570429165 1401 9b542176b82bb9cd0c692e84bb2dbdf9 ""
-  "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.tex" 1570429163 8480 ed7eeb9b7980b73de667b652ba3708d5 ""
+  "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.tex" 1570437382 8480 ed7eeb9b7980b73de667b652ba3708d5 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm" 1136768653 1328 c834bbb027764024c09d3d2bf908b5f0 ""
   "/usr/local/texlive/2019/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
@@ -69,10 +69,10 @@
   "llncs.cls" 1521136900 43467 a21466011e5ed5d4c3f1d5a9af897395 ""
   "samplepaper.aux" 1570429165 1401 9b542176b82bb9cd0c692e84bb2dbdf9 "pdflatex"
   "samplepaper.bbl" 1570429164 1037 35243eef301d3c8b1dc4bd3f5808fffe "bibtex samplepaper"
-  "samplepaper.tex" 1570429163 8480 ed7eeb9b7980b73de667b652ba3708d5 ""
+  "samplepaper.tex" 1570437382 8480 ed7eeb9b7980b73de667b652ba3708d5 ""
   (generated)
   "samplepaper.aux"
   "samplepaper.log"
+  "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.log"
   "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.pdf"
   "samplepaper.pdf"
-  "/Users/daniel/GitHub/tsneGatedMoE/llncs2e/samplepaper.log"
