@@ -21,7 +21,8 @@ from keras.utils import to_categorical
 from keras.layers import Dense, Input, Dropout
 from keras.callbacks import Callback
 from keras import backend as K
-from tsne import TSNE
+from parametric_tSNE import Parametric_tSNE
+from parametric_tSNE.utils import get_multiscale_perplexities
 
 
 # Globals
@@ -61,24 +62,14 @@ def load_cifar10_data():
 
   return (x_train,x_test),(y_train,y_test)
 
-def create_model(x_train):
-  input = Input((x_train.shape[1],))
-  x = Dense(500, activation="relu")(input)
-  x = Dense(500, activation="relu")(x)
-  x = Dense(1000, activation="relu")(x)
-  x = Dropout(0.2)(x)
-  x = Dense(2)(x)
-
-  model = Model(input, x)
-  return model
-
 def main():
-  (x_train, y_train), (x_test, y_test) = load_cifar10_data()
-  high_dims = x_train.shape[1]
-  num_outputs = 2
-  perplexity = 30
+    (x_train, y_train), (x_test, y_test) = load_cifar10_data()
+    high_dims = x_train.shape[1]
+    num_outputs = 2
+    perplexity = 30
 
-  ptSNE = Parametric_tSNE(high_dims, num_outputs, perplexity, all_layers=all_layers)
-
+    ptSNE = Parametric_tSNE(high_dims, num_outputs, perplexity)
+    ptSNE.fit(x_train)
+    output_res = ptSNE.transform(x_train)
 
 main()
