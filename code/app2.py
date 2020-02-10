@@ -39,7 +39,7 @@ batch_size = 5000
 low_dim = 2
 nb_epoch = 20
 shuffle_interval = nb_epoch + 1
-n_jobs = 8
+n_jobs = 4
 perplexity = 30.0
 
 color_palette = sns.color_palette("hls", num_classes)
@@ -72,32 +72,13 @@ def create_model(x_train):
   model = Model(input, x)
   return model
 
-def generate_batch(x_train,n):
-  for i in range(0, n, batch_size):
-      P = calculate_P(x_train[i:i+batch_size])
-      yield(x_train[i:i+batch_size], P[i:i+batch_size])
-
-def generator(x_train):
-  while True:
-      indices = np.arange(x_train.shape[0])
-      np.random.shuffle(indices)
-      for i in range(x_train.shape[0]//batch_size):
-          current_indices = indices[i*batch_size:(i+1)*batch_size]
-          X_batch = x_train[current_indices]
-          # X to P
-          P = TSNE.calculate_P(X_batch)
-          yield X_batch, P
-
 def main():
   (x_train, y_train), (x_test, y_test) = load_cifar10_data()
-  model = create_model(x_train)
-  model.compile("adam", loss = TSNE.KLdivergence)
-  #fit_model(model,n,x_train,y_train,x_test,y_test)
-  #cb = Sampling(model, x_train[:1000], y_train[:1000])
-  #model.fit_generator(generator(x_train,batch_size), steps_per_epoch=x_train.shape[0]//batch_size,epochs=nb_epoch, callbacks=[cb])
-  history = model.fit_generator(
-      generator(x_train),
-      steps_per_epoch=math.ceil(x_train.shape[0]//batch_size),
-      epochs=nb_epoch)
+  high_dims = x_train.shape[1]
+  num_outputs = 2
+  perplexity = 30
+
+  ptSNE = Parametric_tSNE(high_dims, num_outputs, perplexity, all_layers=all_layers)
+
 
 main()
