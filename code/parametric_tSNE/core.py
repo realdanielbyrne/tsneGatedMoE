@@ -2,9 +2,9 @@
 from __future__ import division  # Python 2 users only
 from __future__ import print_function
 
-__doc__= """ 
-Module for building a parametric tSNE model. 
-Trains a neural network on input data. 
+__doc__= """
+Module for building a parametric tSNE model.
+Trains a neural network on input data.
 One can then transform other data based on this model
 
 Main reference:
@@ -69,8 +69,8 @@ def _make_P_np(input, betas):
     #   P_ = P_3.mean(axis=2, keepdims=False)
     P_ = P_3
     return P_
-    
-    
+
+
 def _make_P_tf(input, betas, batch_size):
     """Tensorflow implementation of _make_P_np.
     Not documented because not used, for example only."""
@@ -97,19 +97,19 @@ def _get_squared_cross_diff_tf(X_):
         Tensor of squared differences between x_i and x_j
     """
     batch_size = tf.shape(X_)[0]
-    
+
     expanded = tf.expand_dims(X_, 1)
     # "tiled" is now stacked up all the samples along dimension 1
     tiled = tf.tile(expanded, tf.stack([1, batch_size, 1]))
-    
+
     tiled_trans = tf.transpose(tiled, perm=[1,0,2])
-    
+
     diffs = tiled - tiled_trans
     sum_act = tf.reduce_sum(tf.square(diffs), axis=2)
-    
+
     return sum_act
-    
-    
+
+
 def _get_normed_sym_np(X_, _eps=DEFAULT_EPS):
     """
     Compute the normalized and symmetrized probability matrix from
@@ -129,10 +129,10 @@ def _get_normed_sym_np(X_, _eps=DEFAULT_EPS):
     norm_facs = np.sum(X_, axis=0, keepdims=True)
     X_ = X_ / (norm_facs + _eps)
     X_ = 0.5*(X_ + np.transpose(X_))
-    
+
     return X_
-    
-    
+
+
 def _get_normed_sym_tf(X_, batch_size):
     """
     Compute the normalized and symmetrized probability matrix from
@@ -151,10 +151,10 @@ def _get_normed_sym_tf(X_, batch_size):
     norm_facs = tf.reduce_sum(X_, axis=0, keep_dims=True)
     X_ = X_ / norm_facs
     X_ = 0.5*(X_ + tf.transpose(X_))
-    
+
     return X_
- 
-    
+
+
 def _make_Q(output, alpha, batch_size):
     """
     Calculate the "Q" probability distribution of the output
@@ -179,8 +179,8 @@ def _make_Q(output, alpha, batch_size):
     Q_ = tf.pow((1 + out_sq_diffs/alpha), -(alpha+1)/2)
     Q_ = _get_normed_sym_tf(Q_, batch_size)
     return Q_
- 
-    
+
+
 def kl_loss(y_true, y_pred, alpha=1.0, batch_size=None, num_perplexities=None, _eps=DEFAULT_EPS):
     """ Kullback-Leibler Loss function (Tensorflow)
     between the "true" output and the "predicted" output
@@ -207,9 +207,9 @@ def kl_loss(y_true, y_pred, alpha=1.0, batch_size=None, num_perplexities=None, _
     """
     P_ = y_true
     Q_ = _make_Q(y_pred, alpha, batch_size)
-    
+
     _tf_eps = tf.constant(_eps, dtype=P_.dtype)
-    
+
     kls_per_beta = []
     components = tf.split(P_, num_perplexities, axis=1, name='split_perp')
     for cur_beta_P in components:
@@ -223,12 +223,12 @@ def kl_loss(y_true, y_pred, alpha=1.0, batch_size=None, num_perplexities=None, _
         kls_per_beta.append(kl_total_cost_cur_beta)
     kl_total_cost = tf.add_n(kls_per_beta)
     #kl_total_cost = kl_total_cost_cur_beta
-    
+
     return kl_total_cost
-    
-    
+
+
 class Parametric_tSNE(object):
-    
+
     def __init__(self, num_inputs, num_outputs, perplexities,
                  alpha=1.0, optimizer='adam', batch_size=64, all_layers=None,
                  do_pretrain=True, seed=0):
@@ -271,24 +271,24 @@ class Parametric_tSNE(object):
         self._batch_size = batch_size
         self.do_pretrain = do_pretrain
         self._loss_func = None
-        
+
         tf.set_random_seed(seed)
         np.random.seed(seed)
-        
+
         # If no layers provided, use the same architecture as van der maaten 2009 paper
         if all_layers is None:
             all_layer_sizes = [num_inputs, 500, 500, 2000, num_outputs]
             all_layers = [layers.Dense(all_layer_sizes[1], input_shape=(num_inputs,), activation='sigmoid', kernel_initializer='glorot_uniform')]
-            
+
             for lsize in all_layer_sizes[2:-1]:
                 cur_layer = layers.Dense(lsize, activation='sigmoid', kernel_initializer='glorot_uniform')
                 all_layers.append(cur_layer)
-            
+
             all_layers.append(layers.Dense(num_outputs, activation='linear', kernel_initializer='glorot_uniform'))
-            
+
         self._all_layers = all_layers
         self._init_model()
-        
+
     def _init_model(self):
         """ Initialize Keras model"""
         self.model = models.Sequential(self._all_layers)
@@ -328,12 +328,12 @@ class Parametric_tSNE(object):
             for pind, curperp in enumerate(perplexities):
                 cur_training_betas, cur_P, cur_Hs = calc_betas_loop(cur_training_data, curperp)
                 training_betas[cur_start:cur_end, pind] = cur_training_betas
-            
+
             cur_start += beta_batch_size
             cur_end = min(cur_start+beta_batch_size, num_pts)
-            
+
         return training_betas
-        
+
     def _pretrain_layers(self, pretrain_data, batch_size=64, epochs=10, verbose=0):
         """
         Pretrain layers using stacked auto-encoders
@@ -357,33 +357,33 @@ class Parametric_tSNE(object):
             # Create AE and training
             cur_layers = self._all_layers[0:ind+1]
             ae = models.Sequential(cur_layers)
-            
+
             decoder = layers.Dense(pretrain_data.shape[1], activation='linear')
             ae.add(decoder)
-            
+
             ae.compile(loss='mean_squared_error', optimizer='rmsprop')
             ae.fit(pretrain_data, pretrain_data, batch_size=batch_size, epochs=epochs,
                    verbose=verbose)
-            
+
         self.model = models.Sequential(self._all_layers)
 
         if verbose:
             print('{time}: Finished pretraining'.format(time=datetime.datetime.now()))
-        
+
     def _init_loss_func(self):
         """Initialize loss function based on parameters fed to constructor
         Necessary to do this so we can save/load the model using Keras, since
         the loss function is a custom object"""
-        kl_loss_func = functools.partial(kl_loss, alpha=self.alpha, 
+        kl_loss_func = functools.partial(kl_loss, alpha=self.alpha,
             batch_size=self._batch_size, num_perplexities=self.num_perplexities)
         kl_loss_func.__name__ = 'KL-Divergence'
         self._loss_func = kl_loss_func
-        
+
     @staticmethod
     def _get_num_perplexities(training_betas, num_perplexities):
         if training_betas is None and num_perplexities is None:
             return None
-            
+
         if training_betas is None:
             return num_perplexities
         elif training_betas is not None and num_perplexities is None:
@@ -394,7 +394,7 @@ class Parametric_tSNE(object):
             else:
                 assert training_betas.shape[1] == num_perplexities
             return num_perplexities
-            
+
     def fit(self, training_data, training_betas=None, epochs=10, verbose=0):
         """
         Train the neural network model using provided `training_data`
@@ -413,28 +413,28 @@ class Parametric_tSNE(object):
         -------
         None. Model trained in place
         """
-        
+
         assert training_data.shape[1] == self.num_inputs, "Input training data must be same shape as training `num_inputs`"
-        
+
         self._training_betas = training_betas
         self._epochs = epochs
-        
+
         if self._training_betas is None:
             training_betas = self._calc_training_betas(training_data, self.perplexities)
             self._training_betas = training_betas
         else:
             self.num_perplexities = self._get_num_perplexities(training_betas, self.num_perplexities)
-        
+
         if self.do_pretrain:
             self._pretrain_layers(training_data, batch_size=self._batch_size, epochs=epochs, verbose=verbose)
         else:
             self.model = models.Sequential(self._all_layers)
-        
+
         self._init_loss_func()
         self.model.compile(self._optimizer, self._loss_func)
-        
+
         train_generator = self._make_train_generator(training_data, self._training_betas, self._batch_size)
-        
+
         batches_per_epoch = int(training_data.shape[0] // self._batch_size)
 
         if verbose:
@@ -443,7 +443,7 @@ class Parametric_tSNE(object):
 
         if verbose:
             print('{time}: Finished training on {epochs} epochs'.format(time=datetime.datetime.now(), epochs=epochs))
-        
+
     def transform(self, test_data):
         """Transform the `test_data`. Must have the same second dimension as training data
         Parameters
@@ -458,7 +458,7 @@ class Parametric_tSNE(object):
         assert self.model is not None, "Must train the model before transforming!"
         assert test_data.shape[1] == self.num_inputs, "Input test data must be same shape as training `num_inputs`"
         return self.model.predict(test_data)
-        
+
     @staticmethod
     def _make_train_generator(training_data, betas, batch_size):
         """ Generator to make batches of training data. Cycles forever
@@ -484,20 +484,20 @@ class Parametric_tSNE(object):
             cur_range = np.arange(cur_bounds[0], cur_bounds[1])
             cur_dat = training_data[cur_range, :]
             cur_betas = betas[cur_range, :]
-            
+
             P_arrays_3d = _make_P_np(cur_dat, cur_betas)
-            
+
             P_arrays = [P_arrays_3d[:,:,pp] for pp in range(P_arrays_3d.shape[2])]
-            
+
             # Stack them along dimension 1. This is a hack
             P_arrays = np.concatenate(P_arrays, axis=1)
-            
+
             yield cur_dat, P_arrays
-            
+
     def save_model(self, model_path):
         """Save the underlying model to `model_path` using Keras"""
         return self.model.save(model_path)
-        
+
     def restore_model(self, model_path, training_betas=None, num_perplexities=None):
         """Restore the underlying model from `model_path`"""
         if not self._loss_func:

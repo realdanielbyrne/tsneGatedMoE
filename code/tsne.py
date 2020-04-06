@@ -42,7 +42,6 @@ class TSNE:
 
         return i, thisP
 
-
     @classmethod
     def x2p(cls, X, perplexity=30.0):
         tol = 1e-5
