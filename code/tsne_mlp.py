@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
 import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
-import TSNEsp
+import tsne_sp
 
 # Using Tensorflow
 #from tensorflow import keras
@@ -51,13 +51,13 @@ dropout_rate = .4
 # ptne_model_path = '/content/gdrive/My Drive/Colab Notebooks/models/ptsne_mp_cifar10.h5'
 # combined_model_path = '/content/gdrive/My Drive/Colab Notebooks/models/combined.h5'
 # control_model_path = '/content/gdrive/My Drive/Colab Notebooks/models/control.h5'
-# p_path = '/content/gdrive/My Drive/Colab Notebooks/models/p'
+# p_path = '/content/gdrive/My Drive/Colab Notebooks/models/p.npy'
 
 # local paths
-ptne_model_path = './models/ptsne_mp_cifar10.h5'
-combined_model_path = './models/combined.h5'
-control_model_path = './models/control.h5'
-p_path = './models/p'
+ptne_model_path = 'models/ptsne_mp_cifar10.h5'
+combined_model_path = 'models/combined.h5'
+control_model_path = 'models/control.h5'
+p_path = 'models/p.npy'
 
 def load_cifar10_data():
   # load the CIFAR10 data
@@ -147,7 +147,7 @@ def fit_test_model(x_train, override, concatfunc):
   if override or not os.path.exists(combined_model_path):
     print('Creating TEST model.')
     model = create_combined_model(x_train)
-    model.compile(optimizer='adam', loss=[TSNEsp.KLdivergence,'categorical_crossentropy'], metrics=['accuracy'])
+    model.compile(optimizer='adam', loss=[tsne_sp.KLdivergence,'categorical_crossentropy'], metrics=['accuracy'])
     model.fit(
         [x_train,x_train], [p_train,y_train],
         epochs=nb_epoch, batch_size = batch_size,
@@ -158,7 +158,7 @@ def fit_test_model(x_train, override, concatfunc):
 
   else:
     print('{time}: Loading TEST from {model_path}'.format(time=datetime.datetime.now(), model_path=combined_model_path))
-    cust_object = {TSNEsp.KLdivergence.__name__: TSNEsp.KLdivergence}
+    cust_object = {tsne_sp.KLdivergence.__name__: tsne_sp.KLdivergence}
     model = keras.models.load_model(combined_model_path, custom_objects = cust_object)
 
   return model
@@ -166,7 +166,7 @@ def fit_test_model(x_train, override, concatfunc):
 def create_p(x_train):
   print("Calculating p_train.")
   if override or not os.path.exists(p_path):
-    P = TSNEsp.compute_joint_probabilities(x_train,batch_size=batch_size,verbose = 0)
+    P = tsne_sp.compute_joint_probabilities(x_train,batch_size=batch_size,verbose = 0)
     p_train = P.reshape(x_train.shape[0], -1)
     np.save(p_path,p_train)
   else:
@@ -200,25 +200,12 @@ def sampling(args):
         sampled latent vector (tensor)
     """
 
-    z_mean, z_log_var, output_dim = args
+    z_mean, z_var, dim = args
     batch = K.shape(z_mean)[0]
-    dim = K.int_shape(z_mean)[1]
+
     # by default, random_normal has mean=0 and std=1.0
-    epsilon = K.random_normal(shape=(batch, output_dim))
-    return z_mean + K.exp(0.5 * z_log_var) * epsilon
-
-def create_ptsne_embedding_reparameterization_model(x_train):
-  input = Input((x_train.shape[1],))
-  x = Dense(512, activation="relu")(input)
-  x = Dense(512, activation="relu")(x)
-  x = Dense(2048, activation="relu")(x)
-  x = Dropout(rate=.2, name = "ptsne_embedding")(x)
-  ptsne = Dense(2, name="ptsne")(x)
-  ptsne_var = Dense(2, name='ptsne_var')(x)
-
-  model = Model(input, [ptsne,ptsne_var] )
-  model.summary()
-  return model
+    epsilon = K.random_normal(shape=(batch, dim))
+    return z_mean + K.exp(0.5 * z_var) * epsilon
 
 def create_combined_model2(x_train):
   input = Input((x_train.shape[1],))
@@ -228,16 +215,16 @@ def create_combined_model2(x_train):
   x = Dropout(rate=.2, name = "ptsne_embedding")(x)
 
   # Outputs
-  ptsne = Dense(2, name="ptsne")(x)
-  ptsne_var = Dense(2, name='ptsne_var')(x)
+  mean = Dense(2, name="mean")(x)
+  var = Dense(2, name='var')(x)
 
   # Instantiate embedding model
-  embedding = Model(input, [ptsne,ptsne_var])
+  embedding = Model(input, [mean,var])
   embedding.summary()
   plot_model(embedding, to_file='ptsne_rp.png', show_shapes=True)
 
   # Build gated mixture of experts model
-  z = Lambda(sampling, output_shape=(x_train.shapde[1],), name='z')([ptsne, ptsne_var,(x_train.shapde[1],)])
+  z = Lambda(sampling, output_shape=(x_train.shape[1],), name='z')([mean, var,x_train.shape[1]])
   concat = multiply([z, input], name="concat")
   m = Dense(512, activation='relu')(concat)
   m = Dense(512, activation='relu')(m)
@@ -265,7 +252,7 @@ def fit_combined_model2(x_train, y_train):
 def fit_embedding_model(x_train, override):
   print('Creating Embedding model.')
   embedding_model = create_ptsne_embedding_model(x_train)
-  embedding_model.compile(optimizer='adam', loss=TSNEsp.KLdivergence, metrics=['accuracy'])
+  embedding_model.compile(optimizer='adam', loss=tsne_sp.KLdivergence, metrics=['accuracy'])
 
   embedding_model.fit(
     x_train, p_train,
@@ -281,16 +268,15 @@ def plot_ptsne_model(pred,y_test = None):
   plt.scatter(pred[:, 0], pred[:, 1], c=y_test, marker='o', s=4, edgecolor='', alpha = 0.5)
   fig.tight_layout()
 
-
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   (x_train, y_train), (x_test, y_test) = load_cifar10_data()
 
-  # calculate P
+  # Calculate P
   p_train = create_p(x_train)
 
   # Create embedding model
-  embedding_model = fit_embedding_model(x_train, override)
+  # embedding_model = fit_embedding_model(x_train, override)
 
   # Fit Combined Model
   model2 = fit_combined_model2(x_train, y_train)
