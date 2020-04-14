@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
 import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
-import tsne_sp
+
 
 # Using Tensorflow
 #from tensorflow import keras
@@ -27,25 +27,26 @@ import tsne_sp
 # Using Base Keras
 import keras
 from keras.models import Model
-from keras.layers import Input, Dense, Dropout, Activation, Lambda, multiply
+from keras.layers import Input, Dense, Dropout, Activation, Lambda, multiply, Layer, concatenate
 import keras.backend as K
 from keras.initializers import RandomNormal
 from keras.optimizers import SGD
 from keras.utils import plot_model, to_categorical
-from keras.datasets import cifar10
-
+from keras.datasets import cifar10, mnist
+import tsne_sp 
 
 # Setings
 plt.style.use('ggplot')
 test_data_tag = 'none'
 batch_size = 100
 low_dim = 2
-nb_epoch = 10
+nb_epoch = 20
 shuffle_interval = nb_epoch + 1
 n_jobs = 1
 perplexity = 30.0
 override = True
-dropout_rate = .4
+dropout_rate = .45
+latent_dim = 256
 
 # Colab paths
 # ptne_model_path = '/content/gdrive/My Drive/Colab Notebooks/models/ptsne_mp_cifar10.h5'
@@ -59,9 +60,32 @@ combined_model_path = 'models/combined.h5'
 control_model_path = 'models/control.h5'
 p_path = 'models/p.npy'
 
+def load_minst_data(sparse):
+  # load mnist dataset
+  (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+  # compute the number of labels
+  num_labels = len(np.unique(y_train))
+
+  # image dimensions (assumed square)
+  image_size = x_train.shape[1]
+  input_size = image_size * image_size
+
+  # resize and normalize
+  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255
+  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255
+
+  # convert to one-hot vector
+  if not sparse:
+    y_train = to_categorical(y_train)
+    y_test = to_categorical(y_test)
+
+  return (x_train, y_train), (x_test, y_test), num_labels
+
 def load_cifar10_data():
+  print("Loading cifar10")
   # load the CIFAR10 data
-  K.set_image_data_format('channels_first')
+  keras.backend.set_image_data_format('channels_first')
   (x_train, y_train), (x_test, y_test) = cifar10.load_data()
   n, channel, row, col = x_train.shape
 
@@ -87,7 +111,7 @@ def create_ptsne_embedding_model(x_train):
 
   return model
 
-def create_combined_model(x_train):
+def create_test_model(x_train):
 
   ptsne_in = Input((x_train.shape[1],),name="ptsne_in")
   x = Dense(512, activation="relu")(ptsne_in)
@@ -95,58 +119,24 @@ def create_combined_model(x_train):
   x = Dense(2048, activation="relu")(x)
   x = Dropout(rate=.2)(x)
 
-  ptsne_out = Dense(2, activation="relu", name="ptsne_out")(x)
-  ptsne = Dense(x_train.shape[1],activation="relu", name="ptsne")(ptsne_out)
+  ptsne_out = Dense(2, activation="sigmoid", name="ptsne_out")(x)
 
   mlp_input = Input((x_train.shape[1],))
-  concat = multiply([ptsne, mlp_input], name="concat")
-  m = Dense(512, activation='relu')(concat)
-  m = Dense(512, activation='relu')(m)
-  m = Dense(2048, activation="relu")(m)
+  concat = concatenate([ptsne_out, mlp_input], name="concat")
+  m = Dense(latent_dim, activation='relu')(concat)
+  m = Dense(latent_dim, activation='relu')(m)
+  m = Dense(latent_dim, activation="relu")(m)
   m = Dropout(rate = dropout_rate)(m)
 
   mlp = Dense(10, activation='softmax', name="mlp")(m)
-
   model = Model(inputs=[ptsne_in, mlp_input], outputs=[ptsne_out, mlp])
-  #model.summary()
 
   return model
 
-def create_mlp_model(x_train):
-  mlp_input = Input((x_train.shape[1],))
-  m = Dense(512, activation='relu')(mlp_input)
-  m = Dense(512, activation='relu')(m)
-  m = Dense(2048, activation="relu")(m)
-  m = Dropout(rate = dropout_rate)(m)
-
-  mlp = Dense(10, activation='softmax',name="mlp")(m)
-  model = Model(inputs= mlp_input, outputs = mlp)
-  #model.summary()
-  return model
-
-def fit_control_model(x_train, override):
-  if override or not os.path.exists(control_model_path):
-    print('Creating CONTROL model')
-    control = create_mlp_model(x_train)
-    control.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    control.fit(
-        x_train, y_train,
-        epochs=nb_epoch, batch_size = batch_size,
-        shuffle = False,
-        verbose = 1)
-    print('Saving CONTROL model')
-    control.save(control_model_path,overwrite = True)
-
-  else:
-    print('{time}: Loading CONTROL from {model_path}'.format(time=datetime.datetime.now(), model_path=control_model_path))
-    control = keras.models.load_model(control_model_path)
-
-  return control
-
-def fit_test_model(x_train, override, concatfunc):
+def fit_test_model(x_train, override):
   if override or not os.path.exists(combined_model_path):
     print('Creating TEST model.')
-    model = create_combined_model(x_train)
+    model = create_test_model(x_train)
     model.compile(optimizer='adam', loss=[tsne_sp.KLdivergence,'categorical_crossentropy'], metrics=['accuracy'])
     model.fit(
         [x_train,x_train], [p_train,y_train],
@@ -161,30 +151,19 @@ def fit_test_model(x_train, override, concatfunc):
     cust_object = {tsne_sp.KLdivergence.__name__: tsne_sp.KLdivergence}
     model = keras.models.load_model(combined_model_path, custom_objects = cust_object)
 
-  return model
+  return model, p_train
 
 def create_p(x_train):
   print("Calculating p_train.")
   if override or not os.path.exists(p_path):
     P = tsne_sp.compute_joint_probabilities(x_train,batch_size=batch_size,verbose = 0)
     p_train = P.reshape(x_train.shape[0], -1)
-    np.save(p_path,p_train)
+    #np.save(p_path,p_train)
   else:
     print('{time}: Loading P from {model_path}'.format(time=datetime.datetime.now(), model_path=p_path))
     p_train = np.load(p_path)
   return p_train
 
-# score and compare models
-def score_models(p_train,x_test,y_test):
-  controlscore = control.evaluate([x_test,x_test], [p_train[:10000],y_test],batch_size = batch_size, verbose=1)
-  print('Control Test Loss:', controlscore[0])
-  print('Control Test Accuracy:', controlscore[1])
-
-  testscore = model.evaluate([x_test,x_test], [p_train[:10000],y_test],batch_size = batch_size, verbose=1)
-  print('Test Loss:', testscore[0])
-  print('Test Accuracy:', testscore[1])
-
-  return (controlscore, testscore)
 
 # reparameterization trick
 # instead of sampling from Q(z|X), sample eps = N(0,I)
@@ -221,7 +200,7 @@ def create_combined_model2(x_train):
   # Instantiate embedding model
   embedding = Model(input, [mean,var])
   embedding.summary()
-  plot_model(embedding, to_file='ptsne_rp.png', show_shapes=True)
+  #plot_model(embedding, to_file='ptsne_rp.png', show_shapes=True)
 
   # Build gated mixture of experts model
   z = Lambda(sampling, output_shape=(x_train.shape[1],), name='z')([mean, var,x_train.shape[1]])
@@ -241,6 +220,9 @@ def fit_combined_model2(x_train, y_train):
   model = create_combined_model2(x_train)
   model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
+  # Calculate P
+  p_train = create_p(x_train)
+
   model.fit(
     x_train, y_train,
     epochs=nb_epoch,
@@ -251,6 +233,10 @@ def fit_combined_model2(x_train, y_train):
 
 def fit_embedding_model(x_train, override):
   print('Creating Embedding model.')
+
+  # Calculate P
+  p_train = create_p(x_train)
+
   embedding_model = create_ptsne_embedding_model(x_train)
   embedding_model.compile(optimizer='adam', loss=tsne_sp.KLdivergence, metrics=['accuracy'])
 
@@ -268,36 +254,44 @@ def plot_ptsne_model(pred,y_test = None):
   plt.scatter(pred[:, 0], pred[:, 1], c=y_test, marker='o', s=4, edgecolor='', alpha = 0.5)
   fig.tight_layout()
 
-if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  (x_train, y_train), (x_test, y_test) = load_cifar10_data()
 
-  # Calculate P
-  p_train = create_p(x_train)
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='tSNE Embedding Classifier')
+  parser.add_argument("-s", "--sparse",
+                      action='store_false',
+                      help="Use sparse, integer encoding, instead of one-hot")
+
+  parser.add_argument("-ds", "--dataset",
+                      action='store',
+                      type=str,
+                      default='cifar10',
+                      help="Use sparse, integer encoding, instead of one-hot")
+
+  args = parser.parse_args()
+  if args.dataset == 'mnist':
+    (x_train, y_train), (x_test, y_test), num_labels = load_minst_data(args.sparse)
+  else:
+    (x_train, y_train), (x_test, y_test)  = load_cifar10_data()
 
   # Create embedding model
-  # embedding_model = fit_embedding_model(x_train, override)
+  #embedding_model = fit_embedding_model(x_train, override)
 
   # Fit Combined Model
-  model2 = fit_combined_model2(x_train, y_train)
+  #  model2 = fit_combined_model2(x_train, y_train)
 
-  model2score = model2.evaluate(x_test, y_test,batch_size = batch_size, verbose=1)
-  print('Model2 Loss:', model2score[0])
-  print('Model2 Accuracy:', model2score[1])
+  #  model2score = model2.evaluate(x_test, y_test,batch_size = batch_size, verbose=1)
+  #  print('Model2 Loss:', model2score[0])
+  #  print('Model2 Accuracy:', model2score[1])
 
   # create models
-  control = fit_control_model(x_train, override)
-  model = fit_test_model(x_train, override, fit_test_model)
 
-  # score models
-  controlscore = control.evaluate(x_test, y_test,batch_size = batch_size, verbose=1)
-  print('Control Test Loss:', controlscore[0])
-  print('Control Test Accuracy:', controlscore[1])
+  # calculate P
+  p_train = create_p(x_train)
+  model = fit_test_model(x_train, override)
 
   testscore = model.evaluate([x_test,x_test], [p_train[:10000],y_test],batch_size = batch_size, verbose=1)
   print('Test Loss:', testscore[0])
   print('Test Accuracy:', testscore[1])
   pred = model.predict([x_test,x_test])
 
-  c = np.argmax(y_test, axis=1)
-  plot_ptsne_model(pred[0],c)
+  #plot_ptsne_model(pred[0],c)

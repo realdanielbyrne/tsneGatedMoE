@@ -1,3 +1,9 @@
 {
-    "python.pythonPath": "/Users/daniel/opt/anaconda3/envs/ptsnemoe/bin/python"
+    "python.pythonPath": "/Users/daniel/opt/anaconda3/envs/ptsnemoe/bin/python",
+    "files.exclude": {
+      "**/.classpath": true,
+      "**/.project": true,
+      "**/.settings": true,
+      "**/.factorypath": true
+    }
 }
