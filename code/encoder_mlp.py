@@ -1,22 +1,16 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys, os, datetime, shutil, zipfile, glob,math
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
-import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import Model
+from tensorflow.keras.utils import plot_model
 
-# Using Base Keras
-import keras
-from keras.models import Model
-from keras.layers import Input, Dense, Dropout, Activation, Lambda, multiply, Layer, add, Add,BatchNormalization
-import keras.backend as K
-from keras.initializers import RandomNormal
-from keras.optimizers import SGD
-from keras.utils import plot_model, to_categorical
-from keras.datasets import cifar10,mnist
-from keras.losses import mse
+
 
 # Setings
 plt.style.use('ggplot')
