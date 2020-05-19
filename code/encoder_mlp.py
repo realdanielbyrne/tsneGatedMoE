@@ -8,8 +8,8 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import Model
-from tensorflow.keras.utils import plot_model
-
+from tensorflow.keras.utils import plot_model, to_categorical
+from tensorflow.keras.datasets import mnist, cifar10
 
 
 # Setings

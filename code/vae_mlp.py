@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
+
+#tf keras
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -19,33 +21,42 @@ def load_data(args):
     return  utils.load_minst_data(args.categorical)
   else:
     return  utils.load_cifar10_data(args.categorical)
-  
 
 
-class Sampling(layers.Layer):
+class Encoding(layers.Layer):
   def __init__(self, num_outputs, **kwargs):
-    super(Sampling, self).__init__(**kwargs)
+    super(Encoding, self).__init__(**kwargs)
     self.num_outputs = num_outputs
 
   def call(self, inputs):
     z_mean, z_var = inputs
-    batch = K.shape(z_var)[0]
-    epsilon = K.random_normal(shape=(batch, self.num_outputs))
+    batch = K.shape(z_mean)[0]
+    dim = K.shape(z_mean)[1]
 
-    y = z_mean +K.dot(K.exp(0.5 * z_var), epsilon)
-    y = K.softmax(y)
+    epsilon = K.random_normal(shape=(batch, dim, self.num_outputs // dim))
+
+    y = z_mean + K.exp(0.5 * z_var) * epsilon
     return y
 
   def get_config(self):
     return {'num_outputs': self.num_outputs}
 
+def sampling(args):
+    z_mean, z_log_var = args
+    # K is the keras backendv
+    batch = K.shape(z_mean)[0]
+    dim = K.int_shape(z_mean)[1]
+    # by default, random_normal has mean=0 and std=1.0
+    epsilon = K.random_normal(shape=(batch, dim))
+    return z_mean + K.exp(0.5 * z_log_var)*  epsilon
+
 def create_encoder(input_dim, intermediate_dim, latent_dim):
   encoder_input = layers.Input(shape=(input_dim,), name='encoder_input')
   x = layers.Dense(intermediate_dim, activation='relu')(encoder_input)
-  z_mean = layers.Dense(latent_dim, name='z_mean', activation='relu')(x)
+  z_mean = layers.Dense(latent_dim, name='z_mean')(x)
   z_var = layers.Dense(latent_dim, name='z_var')(x)
-  z = Sampling(num_outputs = latent_dim)([z_mean, z_var])
-  
+  z = Encoding(num_outputs = latent_dim)([z_mean, z_var])
+
   encoder = Model(encoder_input, [z_mean,z_var,z], name='encoder')
   encoder.summary()
   return encoder
@@ -63,7 +74,7 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
     output_dim = input_dim
 
   encoder = create_encoder(input_dim,intermediate_dim, latent_dim)
-  decoder = create_decoder(latent_dim,intermediate_dim,output_dim)
+  decoder = create_decoder(latent_dim,intermediate_dim, output_dim)
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
   decoder_output = decoder(z)
@@ -79,23 +90,63 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   vae.add_loss(vae_loss)
   vae.summary()
 
-  return vae
+  return vae, encoder
+
+def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
+
+  encoder_input = encoder.get_layer("encoder_input").input
+  z_mean, z_var, z = encoder(encoder_input)
+  z = Encoding(num_outputs = input_dim)([z_mean, z_var])
+  x = layers.concatenate([z, encoder_input])
+  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  out = layers.Dense(num_labels, activation="softmax")(x)
+  vae_mlp = Model(encoder_input, out, name="vae_mlp")
+  vae_mlp.summary()
+  return vae_mlp
 
 if __name__ == '__main__':
-  args = utils.parse_cmd()
-  (x_train, y_train), (x_test, y_test), num_labels  = load_data(args)
-  input_dim = output_dim = x_train.shape[-1]
-  vae = create_vae_model(input_dim,2,512,output_dim)
-  vae.compile(optimizer='adam')
 
+  intermediate_dim = 512
+  batch_size = 128
+  latent_dim = 1
+  vae_epochs = 1
+  epochs = 20
+  args = utils.parse_cmd()
+  (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
+  input_dim = output_dim = x_train.shape[-1]
+
+  vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
+  vae.compile(optimizer='adam')
 
   # train the autoencoder
   vae.fit(x_train,
-          epochs=3,
-          batch_size=128,
-          validation_data=(x_test, None))
+      epochs = vae_epochs,
+      batch_size = batch_size,
+      validation_data = (x_test, None))
 
-  utils.plot_encoding(vae,
-                [x_test,y_test],
-                batch_size=128,
-                model_name="vae_mlp")
+  encoder.trainable = False
+  encoder.compile()
+
+  vae_mlp = create_vae_mlp(input_dim, latent_dim, num_labels, encoder)
+  vae_mlp.compile(loss='categorical_crossentropy',
+              optimizer="adam",
+              metrics=['acc'])
+
+  vae_mlp.fit(x_train, y_train,
+            batch_size=batch_size,
+            epochs=epochs)
+  # utils.plot_encoding(encoder,
+  #               [x_test, y_test],
+  #               batch_size=batch_size,
+  #               model_name="vae_mlp")
+
+  # score trained model
+  scores = vae_mlp.evaluate(x_test,
+                          y_test_cat,
+                          batch_size=batch_size,
+                          verbose=0)
+  print('Test loss:', scores[0])
+  print('Test accuracy:', scores[1])
+

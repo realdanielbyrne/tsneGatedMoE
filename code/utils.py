@@ -22,7 +22,7 @@ def parse_cmd(description = 'AE Embedding Classifier'):
   parser.add_argument("-ds", "--dataset",
                       action='store',
                       type=str,
-                      default='mnist',
+                      default='cifar10',
                       help="Use sparse, integer encoding, instead of one-hot")
 
   args = parser.parse_args()
@@ -46,9 +46,11 @@ def load_minst_data(categorical):
   # convert to one-hot vector
   if categorical:
     y_train = to_categorical(y_train)
-    y_test = to_categorical(y_test)
+    y_test_cat = to_categorical(y_test)
+  else:
+    y_test_cat = None
 
-  return (x_train, y_train), (x_test, y_test), num_labels
+  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
 
 def load_cifar10_data(categorical):
   # load the CIFAR10 data
@@ -65,13 +67,15 @@ def load_cifar10_data(categorical):
   if categorical:
     # Convert class vectors to binary class matrices.
     y_train = to_categorical(y_train, 10)
-    y_test = to_categorical(y_test, 10)
+    y_test_cat = to_categorical(y_test, 10)
+  else:
+    y_test_cat = None
 
-  return (x_train, y_train), (x_test, y_test), num_labels
+  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
 
 
 
-def plot_embedding(encoder,
+def plot_encoding(encoder,
                  data,
                  batch_size=128,
                  model_name="vae_mnist"):
