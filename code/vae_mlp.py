@@ -33,22 +33,39 @@ class Encoding(layers.Layer):
     batch = K.shape(z_mean)[0]
     dim = K.shape(z_mean)[1]
 
-    epsilon = K.random_normal(shape=(batch, dim, self.num_outputs // dim))
+    epsilon = K.random_normal(shape=(batch, self.num_outputs))
+    z1, z2 = tf.zeros(batch,self.num_outputs)
+    z1, z2 = z1 + .01
+    z1 = z1 + z_mean
+    z2 = z2 + z_var
 
-    y = z_mean + K.exp(0.5 * z_var) * epsilon
+    z_mean = tf.repeat(z_mean,repeats=self.num_outputs//dim, axis = -1)
+    z_var = tf.repeat(z_var,repeats=self.num_outputs//dim, axis = -1)
+    y = z_mean + tf.exp(0.5 * z_var) * epsilon
     return y
 
   def get_config(self):
     return {'num_outputs': self.num_outputs}
 
-def sampling(args):
-    z_mean, z_log_var = args
-    # K is the keras backendv
+class ProbabilityDropout(layers.layer):
+  def __init__(self, num_outputs, **kwargs):
+    super(ProbabilityDropout, self).__init__(**kwargs)
+    self.num_outputs = num_outputs
+
+  def call(self, inputs):
+    z_mean, z_var = inputs
     batch = K.shape(z_mean)[0]
-    dim = K.int_shape(z_mean)[1]
-    # by default, random_normal has mean=0 and std=1.0
-    epsilon = K.random_normal(shape=(batch, dim))
-    return z_mean + K.exp(0.5 * z_log_var)*  epsilon
+    dim = K.shape(z_mean)[1]
+
+    epsilon = K.random_normal(shape=(batch, self.num_outputs))
+    z_mean = tf.repeat(z_mean,repeats=self.num_outputs//dim, axis = -1)
+    z_var = tf.repeat(z_var,repeats=self.num_outputs//dim, axis = -1)
+    y = z_mean + tf.exp(0.5 * z_var) * epsilon
+    return y
+
+  def get_config(self):
+    return {'num_outputs': self.num_outputs}
+
 
 def create_encoder(input_dim, intermediate_dim, latent_dim):
   encoder_input = layers.Input(shape=(input_dim,), name='encoder_input')
@@ -58,7 +75,6 @@ def create_encoder(input_dim, intermediate_dim, latent_dim):
   z = Encoding(num_outputs = latent_dim)([z_mean, z_var])
 
   encoder = Model(encoder_input, [z_mean,z_var,z], name='encoder')
-  encoder.summary()
   return encoder
 
 def create_decoder(latent_dim, intermediate_dim, output_dim):
@@ -66,7 +82,6 @@ def create_decoder(latent_dim, intermediate_dim, output_dim):
   x = keras.layers.Dense(intermediate_dim, activation='relu')(latent_inputs)
   decoder_outputs = keras.layers.Dense(output_dim, activation='sigmoid')(x)  
   decoder = keras.Model(latent_inputs, decoder_outputs, name='decoder')
-  decoder.summary()
   return decoder
 
 def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None):
@@ -75,7 +90,7 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
 
   encoder = create_encoder(input_dim,intermediate_dim, latent_dim)
   decoder = create_decoder(latent_dim,intermediate_dim, output_dim)
-  encoder_input = encoder.get_layer("encoder_input").input
+  encoder_input = encoder.get_layer("encoder_input").input  
   z_mean, z_var, z = encoder(encoder_input)
   decoder_output = decoder(z)
   vae = keras.Model(encoder_input, decoder_output, name = 'vae')
@@ -89,17 +104,18 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   vae_loss = K.mean(reconstruction_loss + kl_loss)
   vae.add_loss(vae_loss)
   vae.summary()
-
   return vae, encoder
 
 def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
 
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
-  z = Encoding(num_outputs = input_dim)([z_mean, z_var])
-  x = layers.concatenate([z, encoder_input])
+  x = Encoding(num_outputs = input_dim)([z_mean, z_var])
+  x = layers.add([x, encoder_input])
   x = layers.Dense(intermediate_dim, activation='relu')(x)
   x = layers.Dense(intermediate_dim, activation='relu')(x)
+  z = Encoding(num_outputs = intermediate_dim)([z_mean, z_var])
+  x = layers.add([x, z] , name = 'add2')
   x = layers.Dense(intermediate_dim, activation='relu')(x)
   out = layers.Dense(num_labels, activation="softmax")(x)
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
@@ -110,8 +126,8 @@ if __name__ == '__main__':
 
   intermediate_dim = 512
   batch_size = 128
-  latent_dim = 1
-  vae_epochs = 1
+  latent_dim = 16
+  vae_epochs = 3
   epochs = 20
   args = utils.parse_cmd()
   (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
