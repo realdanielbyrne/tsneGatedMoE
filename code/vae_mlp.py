@@ -22,6 +22,14 @@ def load_data(args):
   else:
     return  utils.load_cifar10_data(args.categorical)
 
+class Sampling(layers.Layer):
+
+  def call(self, inputs):
+    z_mean, z_log_var = inputs
+    batch = tf.shape(z_mean)[0]
+    dim = tf.shape(z_mean)[1]
+    epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+    return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
 class Encoding(layers.Layer):
   def __init__(self, num_outputs, **kwargs):
@@ -30,15 +38,10 @@ class Encoding(layers.Layer):
 
   def call(self, inputs):
     z_mean, z_var = inputs
-    batch = K.shape(z_mean)[0]
-    dim = K.shape(z_mean)[1]
+    batch = tf.shape(z_mean)[0]
+    dim = tf.shape(z_mean)[1]
 
     epsilon = K.random_normal(shape=(batch, self.num_outputs))
-    z1, z2 = tf.zeros(batch,self.num_outputs)
-    z1, z2 = z1 + .01
-    z1 = z1 + z_mean
-    z2 = z2 + z_var
-
     z_mean = tf.repeat(z_mean,repeats=self.num_outputs//dim, axis = -1)
     z_var = tf.repeat(z_var,repeats=self.num_outputs//dim, axis = -1)
     y = z_mean + tf.exp(0.5 * z_var) * epsilon
@@ -47,7 +50,27 @@ class Encoding(layers.Layer):
   def get_config(self):
     return {'num_outputs': self.num_outputs}
 
-class ProbabilityDropout(layers.layer):
+class  ProbabilityDropout(layers.layer):
+  def __init__(self, num_outputs, **kwargs):
+    super(ProbabilityDropout, self).__init__(**kwargs)
+    self.sampling = Sampling()
+    self.num_outputs = num_outputs
+
+  def call(self, inputs):
+    z_mean, z_var = inputs
+    batch = K.shape(z_mean)[0]
+    dim = K.shape(z_mean)[1]
+ 
+
+    z_range = [K, min(z,axis = -1),K.max(z,axis=-1)]
+    z = tf.nn.softmax(tf.cast(tf.histogram_fixed_width_bins(z,z_range,nbins = self.num_outputs),dtype = 'float32'))
+
+    return z
+
+  def get_config(self):
+    return {'num_outputs': self.num_outputs}
+
+class Latent(layers.layer):
   def __init__(self, num_outputs, **kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
@@ -57,9 +80,10 @@ class ProbabilityDropout(layers.layer):
     batch = K.shape(z_mean)[0]
     dim = K.shape(z_mean)[1]
 
-    epsilon = K.random_normal(shape=(batch, self.num_outputs))
-    z_mean = tf.repeat(z_mean,repeats=self.num_outputs//dim, axis = -1)
-    z_var = tf.repeat(z_var,repeats=self.num_outputs//dim, axis = -1)
+    epsilon = K.sum(K.random_normal(shape=(batch, dim)),axis = 0,keepsims = True)
+    epsilon_range = [K, min(epsilon,axis = -1),K.max(epsilon,axis=-1)]
+    filt = tf.nn.softmax(tf.cast(tf.histogram_fixed_width_bins(epsilon,epsilon_range,nbins = self.num_outputs),dtype = 'float32'))
+
     y = z_mean + tf.exp(0.5 * z_var) * epsilon
     return y
 
