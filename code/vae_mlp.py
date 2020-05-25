@@ -69,36 +69,54 @@ def histogram_fixed_width_bins(values,
     return array_ops.reshape(indices, shape)
 
 class  ProbabilityDropout(layers.layer):
-  def __init__(self, **kwargs):
+  def __init__(self, drop_with_prob = False, **kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.sampling = Sampling()
     self.regularizer = layers.ActivityRegularization()
+    self.drop_with_prob = drop_with_prob
  
   def call(self, inputs, training = None):
     z_mean, z_var, x = inputs
 
-    batch = K.shape(z_mean)[0]
-    dim = K.shape(z_mean)[1]
-    num_outputs = x.shape[1]
-    multiplier = num_outputs // batch
+    if training is None:
+      training = K.learning_phase()
 
-    z_mean = tf.repeat(z_mean,repeats = multiplier, axis = 0)
-    z_var = tf.repeat(z_var,repeats = multiplier, axis = 0)
+    if training :
+      z_mean = tf.ones((2,4))
+      z_var = tf.ones((2,4))
+      x = tf.keras.backend.random_normal((2,12))
 
-    epsilon = K.random_normal(shape=(batch * multiplier, dim))
-    z = z_mean + tf.exp(0.5 * z_var) * epsilon
-    z = tf.reshape(z,shape=(batch,dim*multiplier))
+      batch = K.shape(z_mean)[0]
+      dim = K.shape(z_mean)[1]
+      num_outputs = x.shape[1]
+      multiplier = num_outputs // batch
 
-    def hist(t):
-      t_range = [K.min(t,axis = -1),K.max(t, axis = -1)]
-      t = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(t,t_range, nbins = num_outputs),dtype = tf.float32))
-      return t
+      z_mean = tf.repeat(z_mean,repeats = multiplier, axis = 0)
+      z_var = tf.repeat(z_var,repeats = multiplier, axis = 0)
 
-    z = tf.map_fn(self.hist,z)
-    z = self.regularizer(l1=.01)(z)
+      epsilon = K.random_normal(shape=(batch * multiplier, dim))
+      z = z_mean + tf.exp(0.5 * z_var) * epsilon
+      z = tf.reshape(z,shape=(batch,dim*multiplier))
 
-    return z
+      # computes drop probability
+      def dropprob(p):
+        p_range = [K.min(p,axis = -1),K.max(p, axis = -1)]
+        p = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(p, p_range, nbins = num_outputs),dtype = tf.float32))
+        return p
 
+      probs = tf.map_fn(dropprob, z)
+
+      if self.drop_with_prob:
+        noise = np.random.choice([0, 1],
+                                 x.shape,
+                                 replace=True,
+                                 p=[level, 1 - level])
+        return x * noise / (1 - level)
+      else:
+        return x * probs
+
+    else:
+      return x
 
 def create_encoder(input_dim, intermediate_dim, latent_dim):
   encoder_input = layers.Input(shape=(input_dim,), name='encoder_input')
@@ -200,4 +218,6 @@ if __name__ == '__main__':
   print('Test accuracy:', scores[1])
 
 
-
+level = .5
+x = tf.keras.backend.random_normal((2,4))
+noise = np.random.choice([0,1], x.shape, replace = True,p=x)
