@@ -69,11 +69,10 @@ def histogram_fixed_width_bins(values,
     return array_ops.reshape(indices, shape)
 
 class  ProbabilityDropout(layers.layer):
-  def __init__(self, drop_with_prob = False, **kwargs):
+  def __init__(self, **kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.sampling = Sampling()
     self.regularizer = layers.ActivityRegularization()
-    self.drop_with_prob = drop_with_prob
  
   def call(self, inputs, training = None):
     z_mean, z_var, x = inputs
@@ -105,15 +104,8 @@ class  ProbabilityDropout(layers.layer):
         return p
 
       probs = tf.map_fn(dropprob, z)
-
-      if self.drop_with_prob:
-        noise = np.random.choice([0, 1],
-                                 x.shape,
-                                 replace=True,
-                                 p=[level, 1 - level])
-        return x * noise / (1 - level)
-      else:
-        return x * probs
+      probs = tf.map_fn(lambda p:min(1,max(p,)))
+      return x * probs
 
     else:
       return x
@@ -221,3 +213,10 @@ if __name__ == '__main__':
 level = .5
 x = tf.keras.backend.random_normal((2,4))
 noise = np.random.choice([0,1], x.shape, replace = True,p=x)
+
+
+t = tf.constant([[1, 2], [3, 4]], dtype=tf.int32)
+t = math_ops.minimum(t,2)
+print(t)
+
+t = math_ops.minimum(2,t)
