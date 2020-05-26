@@ -494,4 +494,15 @@
   pages     = {384--391},
 }
 
+@Article{Shafiee2016,
+  author    = {Mohammad Javad Shafiee and Parthipan Siva and Alexander Wong},
+  journal   = {{IEEE} Access},
+  title     = {{StochasticNet}: Forming Deep Neural Networks via Stochastic Connectivity},
+  year      = {2016},
+  pages     = {1915--1924},
+  volume    = {4},
+  doi       = {10.1109/access.2016.2551458},
+  publisher = {Institute of Electrical and Electronics Engineers ({IEEE})},
+}
+
 @Comment{jabref-meta: databaseType:bibtex;}

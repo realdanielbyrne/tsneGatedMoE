@@ -50,7 +50,7 @@ class Encoding(layers.Layer):
   def get_config(self):
     return {'num_outputs': self.num_outputs}
 
-class  ProbabilityDropout(layers.layer):
+class  ProbabilityDropout(layers.Layer):
   def __init__(self, num_outputs, **kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.sampling = Sampling()
@@ -61,7 +61,6 @@ class  ProbabilityDropout(layers.layer):
     batch = K.shape(z_mean)[0]
     dim = K.shape(z_mean)[1]
  
-
     z_range = [K, min(z,axis = -1),K.max(z,axis=-1)]
     z = tf.nn.softmax(tf.cast(tf.histogram_fixed_width_bins(z,z_range,nbins = self.num_outputs),dtype = 'float32'))
 
@@ -70,9 +69,9 @@ class  ProbabilityDropout(layers.layer):
   def get_config(self):
     return {'num_outputs': self.num_outputs}
 
-class Latent(layers.layer):
+class Latent(layers.Layer):
   def __init__(self, num_outputs, **kwargs):
-    super(ProbabilityDropout, self).__init__(**kwargs)
+    super(Latent, self).__init__(**kwargs)
     self.num_outputs = num_outputs
 
   def call(self, inputs):
