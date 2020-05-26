@@ -486,7 +486,12 @@
   keywords    = {cs.CV},
 }
 
-@Article{,
+@InProceedings{van2009learning,
+  author    = {Van Der Maaten, Laurens},
+  booktitle = {Artificial Intelligence and Statistics},
+  title     = {Learning a parametric embedding by preserving local structure},
+  year      = {2009},
+  pages     = {384--391},
 }
 
 @Comment{jabref-meta: databaseType:bibtex;}

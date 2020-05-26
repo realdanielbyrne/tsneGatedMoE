@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
 
-#tf keras
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -14,15 +13,6 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras import backend as K
 from tensorflow.keras import losses 
 import utils
-
-
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import clip_ops
-from tensorflow.python.ops import gen_math_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.util.tf_export import tf_export
 
 def load_data(args):
   if args.dataset == 'mnist':
@@ -39,40 +29,12 @@ class Sampling(layers.Layer):
     epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
     return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
-
-def histogram_fixed_width_bins(values,
-                               value_range,
-                               nbins=100,
-                               dtype=dtypes.int32,
-                               name=None):
-  with ops.name_scope(name, 'histogram_fixed_width_bins',
-                      [values, value_range, nbins]):
-    values = ops.convert_to_tensor(values, name='values')
-    shape = array_ops.shape(values)
-
-    value_range = ops.convert_to_tensor(value_range, name='value_range')
-    nbins = ops.convert_to_tensor(nbins, dtype=dtypes.int32, name='nbins')
-    nbins_float = math_ops.cast(nbins, values.dtype)
-
-    # Map tensor values that fall within value_range to [0, 1].
-    scaled_values = math_ops.truediv(
-        values - value_range[0],
-        value_range[1] - value_range[0],
-        name='scaled_values')
-
-    # map tensor values within the open interval value_range to {0,.., nbins-1},
-    # values outside the open interval will be zero or less, or nbins or more.
-    indices = math_ops.floor(nbins_float * scaled_values, name='indices')
-
-    # Clip edge cases (e.g. value = value_range[1]) or "outliers."
-    indices = math_ops.cast(clip_ops.clip_by_value(indices, 0, nbins_float - 1), dtypes.int32)
-    return array_ops.reshape(indices, shape)
-
-class  ProbabilityDropout(layers.layer):
-  def __init__(self, **kwargs):
+class  ProbabilityDropout(layers.Layer):
+  def __init__(self, scale_factor = .9, zero_point = 1e-8,**kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.sampling = Sampling()
-    self.regularizer = layers.ActivityRegularization()
+    self.scale_factor = scale_factor
+    self.zero_point = zero_point
  
   def call(self, inputs, training = None):
     z_mean, z_var, x = inputs
@@ -100,8 +62,12 @@ class  ProbabilityDropout(layers.layer):
         return p
 
       probs = tf.map_fn(dropprob, z)
-      probs = tf.map_fn(lambda p:min(1,max(p,)))
-      return x * probs
+      
+      # push values that are close to zero, to zero
+      condition = tf.less(probs, self.zero_point)
+      probs = tf.where(condition, tf.zeros_like(probs), probs)       
+
+      return x * probs / self.scale_factor
 
     else:
       return x
@@ -111,7 +77,7 @@ def create_encoder(input_dim, intermediate_dim, latent_dim):
   x = layers.Dense(intermediate_dim, activation='relu')(encoder_input)
   z_mean = layers.Dense(latent_dim, name='z_mean')(x)
   z_var = layers.Dense(latent_dim, name='z_var')(x)
-  z = Sampling(num_outputs = latent_dim)([z_mean, z_var])
+  z = Sampling()([z_mean, z_var])
 
   encoder = Model(encoder_input, [z_mean,z_var,z], name='encoder')
   return encoder
@@ -148,7 +114,7 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
 def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
 
   encoder_input = encoder.get_layer("encoder_input").input
-  z_mean, z_var, z = encoder(encoder_input)
+  z_mean, z_var, _ = encoder(encoder_input)
   x = ProbabilityDropout(encoder_input)([z_mean,z_var,encoder_input])
   x = layers.Dense(intermediate_dim, activation='relu')(x)
   x = ProbabilityDropout(intermediate_dim)([z_mean,z_var,x])
@@ -206,13 +172,3 @@ if __name__ == '__main__':
   print('Test accuracy:', scores[1])
 
 
-level = .5
-x = tf.keras.backend.random_normal((2,4))
-noise = np.random.choice([0,1], x.shape, replace = True,p=x)
-
-
-t = tf.constant([[1, 2], [3, 4]], dtype=tf.int32)
-t = math_ops.minimum(t,2)
-print(t)
-
-t = math_ops.minimum(2,t)
