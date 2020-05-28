@@ -22,8 +22,10 @@ def parse_cmd(description = 'AE Embedding Classifier'):
   parser.add_argument("-ds", "--dataset",
                       action='store',
                       type=str,
-                      default='cifar10',
+                      default='mnist',
                       help="Use sparse, integer encoding, instead of one-hot")
+                  
+
 
   args = parser.parse_args()
   return args
