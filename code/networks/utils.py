@@ -103,3 +103,11 @@ def plot_encoding(encoder,
     plt.savefig(filename)
     plt.show()
 
+def standardize_data_format(data_format):
+  if data_format == "channels_last":
+    data_format = "NHWC"
+  elif data_format == "channels_first":
+    data_format = "NCHW"
+  else:
+    data_format = data_format
+  return data_format
