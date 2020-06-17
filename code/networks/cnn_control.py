@@ -1,41 +1,24 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys, os, datetime, shutil, zipfile, glob,math
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import argparse
-import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
+import matplotlib as plt
 
 # Using Base Keras
-import keras
-from keras.models import Model, Sequential
-from keras.layers import Input, Dense, Dropout, Conv2D, Flatten,BatchNormalization,Activation
-import keras.backend as K
-from keras.initializers import RandomNormal
-from keras.optimizers import SGD
-from keras.utils import plot_model, to_categorical
-from keras.datasets import cifar10,mnist
+import tensorflow as tf
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.layers import Input, Dense, Dropout, Conv2D, Flatten,BatchNormalization,Activation
+from tensorflow.keras import backend as K
+from tensorflow.keras.initializers import RandomNormal
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.utils import plot_model, to_categorical
+from tensorflow.keras.datasets import cifar10,mnist
 
 # Setings
-plt.style.use('ggplot')
-test_data_tag = 'none'
-batch_size = 128
-low_dim = 2
-nb_epoch = 20
-shuffle_interval = nb_epoch + 1
-n_jobs = 1
-perplexity = 30.0
-override = True
-dropout_rate = .45
-intermediate_dim = 512
-latent_dim = 256
 
-# local paths
-ptne_model_path = 'models/ptsne_mp_cifar10.h5'
-combined_model_path = 'models/combined.h5'
-control_model_path = 'models/control.h5'
-p_path = 'models/p.npy'
+batch_size = 128
+nb_epoch = 20
+dropout_rate = .45
 
 """
 # Standard model + embedding on front
@@ -149,7 +132,7 @@ if __name__ == '__main__':
 
   # model accuracy on test dataset
   score = model.evaluate(x_test, y_test, batch_size=batch_size)
-  print('\CNN Control Model Test Loss:', score[0])
+  print('CNN Control Model Test Loss:', score[0])
   print("CNN Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
 
 

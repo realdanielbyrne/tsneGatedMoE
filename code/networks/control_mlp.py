@@ -16,8 +16,8 @@ import utils
 
 # Setings
 DROPOUT_RATE = .45
-DIMENSION = 768
-EPOCHS = 5
+DIMENSION = 1000
+EPOCHS = 20
 BATCH_SIZE = 100
 
 # local paths
@@ -27,17 +27,15 @@ control_model_path = 'models/control.h5'
 p_path = 'models/p.npy'
 
 def create_model(x_train, num_labels):
-  model = Sequential()
-  model.add(Dense(DIMENSION, input_dim=x_train.shape[1]))
-  model.add(Activation('relu'))
-  model.add(Dropout(DROPOUT_RATE))
 
-  model.add(Dense(DIMENSION))
-  model.add(Activation('relu'))
-  model.add(Dropout(DROPOUT_RATE))
+  model_in = Input(shape=(x_train.shape[1],), name='model_in')
+  x = Dense(DIMENSION, activation='relu')(model_in)
+  x = Dropout(DROPOUT_RATE)(x)
+  x = Dense(DIMENSION, activation='relu')(x)
+  x = Dropout(DROPOUT_RATE)(x)
+  model_out = Dense(num_labels, activation='softmax')(x)
+  model = Model(model_in, model_out)
 
-  model.add(Dense(num_labels))
-  model.add(Activation('softmax'))
   return model
 
 if __name__ == '__main__':
