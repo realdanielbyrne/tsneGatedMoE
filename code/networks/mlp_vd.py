@@ -12,10 +12,10 @@ from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer
 
 from tensorflow.keras.datasets import cifar10, mnist
+from layers.vd import VarDropout
 import utils
 
 # Setings
-DROPOUT_RATE = .45
 DIMENSION = 768
 EPOCHS = 5
 BATCH_SIZE = 100
@@ -27,17 +27,16 @@ control_model_path = 'models/control.h5'
 p_path = 'models/p.npy'
 
 def create_model(x_train, num_labels):
-  model = Sequential()
-  model.add(Dense(DIMENSION, input_dim=x_train.shape[1]))
-  model.add(Activation('relu'))
-  model.add(Dropout(DROPOUT_RATE))
 
-  model.add(Dense(DIMENSION))
-  model.add(Activation('relu'))
-  model.add(Dropout(DROPOUT_RATE))
-
-  model.add(Dense(num_labels))
-  model.add(Activation('softmax'))
+  model_in = Input(shape=(x_train.shape[1],), name='model_in')
+  x = Dense(DIMENSION, activation='relu')(model_in)
+  x = VarDropout( DIMENSION,
+                  activation = 'relu',
+                  )(x)
+  x = Dense(DIMENSION, activation='relu')(x)
+  x = VarDropout()(x)
+  model_out = Dense(num_labels, activation='softmax')(x)
+  model = Model(model_in, model_out)
   return model
 
 if __name__ == '__main__':

@@ -3,22 +3,23 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import backend as K
 EPSILON = 1e-8
 
-class VarDropout(base.Layer):
+class VarDropout(layers.Layer):
   def __init__(self,
                num_outputs,
-               activation,
-               kernel_initializer,
-               bias_initializer,
-               kernel_regularizer,
-               bias_regularizer,
-               log_sigma2_initializer,
-               activity_regularizer=None,
-               is_training=True,
+               activation = tf.keras.activations.relu,
+               kernel_initializer = tf.keras.initializers.random_normal,
+               bias_initializer = tf.keras.initializers.random_normal,
+               kernel_regularizer = tf.keras.regularizers.L1,
+               bias_regularizer =  tf.keras.regularizers.L1,
+               log_sigma2_initializer = None,
+               activity_regularizer = None,
                trainable=True,
                use_bias=True,
-               eps=common.EPSILON,
+               eps=EPSILON,
                threshold=3.,
                clip_alpha=8.,
                name="VarDropout",
@@ -35,7 +36,6 @@ class VarDropout(base.Layer):
     self.kernel_regularizer = kernel_regularizer
     self.bias_regularizer = bias_regularizer
     self.log_sigma2_initializer = log_sigma2_initializer
-    self.is_training = is_training
     self.use_bias = use_bias
     self.eps = eps
     self.threshold = threshold
@@ -51,9 +51,8 @@ class VarDropout(base.Layer):
                             regularizer=self.kernel_regularizer,
                             trainable=True)
 
-    if not self.log_sigma2_initializer:
-      self.log_sigma2_initializer = tf.constant_initializer(
-          value=-10, dtype=tf.float32)
+    if self.log_sigma2_initializer is None:
+      self.log_sigma2_initializer = tf.constant_initializer(value=-10)
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
                             initializer=self.kernel_initializer,
@@ -69,16 +68,16 @@ class VarDropout(base.Layer):
       self.b = None
     self.built = True
 
-  def call(self,inputs):
-    if self.is_training:
+  def call(self,inputs, training = None):
+    if training:
           x = VarDropout.matmul_train(
-          inputs, (self.kernel, self.log_sigma2), clip_alpha=self.clip_alpha)
+          inputs, (self.w, self.log_sigma2), clip_alpha=self.clip_alpha)
     else:
       x = VarDropout.matmul_eval(
-          inputs, (self.kernel, self.log_sigma2), threshold=self.threshold)
+          inputs, (self.w, self.log_sigma2), threshold=self.threshold)
 
     if self.use_bias:
-      x = tf.nn.bias_add(x, self.bias)
+      x = tf.nn.bias_add(x, self.b)
     if self.activation is not None:
       return self.activation(x)
     return x
@@ -90,7 +89,7 @@ class VarDropout(base.Layer):
       transpose_a=False,
       transpose_b=False,
       threshold=3.0,
-      eps=common.EPSILON):
+      eps=EPSILON):
     # We expect a 2D input tensor, as is standard in fully-connected layers
     x.get_shape().assert_has_rank(2)
 
@@ -115,7 +114,7 @@ class VarDropout(base.Layer):
       transpose_a=False,
       transpose_b=False,
       clip_alpha=None,
-      eps=common.EPSILON):
+      eps=EPSILON):
 
     # We expect a 2D input tensor, as in standard in fully-connected layers
     x.get_shape().assert_has_rank(2)
@@ -144,7 +143,7 @@ class VarDropout(base.Layer):
         transpose_b=transpose_b) + eps)
 
     output_shape = tf.shape(std_activation)
-    return mu_activation + std_activation * tf.random_normal(output_shape)
+    return mu_activation + std_activation * K.random_normal(output_shape)
 
   @staticmethod
   def verify_variational_params(variational_params):
@@ -156,7 +155,7 @@ class VarDropout(base.Layer):
 
   @staticmethod
   def compute_log_alpha(log_sigma2, theta, eps=EPSILON, value_limit=8.):
-    log_alpha = log_sigma2 - tf.log(tf.square(theta) + eps)
+    log_alpha = log_sigma2 - tf.math.log(tf.square(theta) + eps)
 
     if value_limit is not None:
       # If a limit is specified, clip the alpha values
@@ -165,4 +164,4 @@ class VarDropout(base.Layer):
 
   @staticmethod
   def compute_log_sigma2(log_alpha, theta, eps=EPSILON):
-    return log_alpha + tf.log(tf.square(theta) + eps)
+    return log_alpha + tf.math.log(tf.square(theta) + eps)

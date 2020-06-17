@@ -8,6 +8,7 @@ import argparse
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.layers import Dense, Dropout, Input
 from tensorflow.keras import Model
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras import backend as K
@@ -73,20 +74,20 @@ class  ProbabilityDropout(layers.Layer):
       return x
 
 def create_encoder(input_dim, intermediate_dim, latent_dim):
-  encoder_input = layers.Input(shape=(input_dim,), name='encoder_input')
-  x = layers.Dense(intermediate_dim, activation='relu')(encoder_input)
-  z_mean = layers.Dense(latent_dim, name='z_mean')(x)
-  z_var = layers.Dense(latent_dim, name='z_var')(x)
+  encoder_input = Input(shape=(input_dim,), name='encoder_input')
+  x = Dense(intermediate_dim, activation='relu')(encoder_input)
+  z_mean = Dense(latent_dim, name='z_mean')(x)
+  z_var = Dense(latent_dim, name='z_var')(x)
   z = Sampling()([z_mean, z_var])
 
   encoder = Model(encoder_input, [z_mean, z_var, z], name='encoder')
   return encoder
 
 def create_decoder(latent_dim, intermediate_dim, output_dim):
-  latent_inputs = keras.layers.Input(shape=(latent_dim,), name='latent_inputs')
-  x = keras.layers.Dense(intermediate_dim, activation='relu')(latent_inputs)
-  decoder_outputs = keras.layers.Dense(output_dim, activation='sigmoid')(x)
-  decoder = keras.Model(latent_inputs, decoder_outputs, name='decoder')
+  latent_inputs = Input(shape=(latent_dim,), name='latent_inputs')
+  x = Dense(intermediate_dim, activation='relu')(latent_inputs)
+  decoder_outputs = Dense(output_dim, activation='sigmoid')(x)
+  decoder = Model(latent_inputs, decoder_outputs, name='decoder')
   return decoder
 
 def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None):
@@ -98,7 +99,7 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
   decoder_output = decoder(z)
-  vae = keras.Model(encoder_input, decoder_output, name = 'vae')
+  vae = Model(encoder_input, decoder_output, name = 'vae')
 
   # vae loss
   reconstruction_loss = losses.mse(encoder_input, decoder_output)
@@ -116,13 +117,13 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, _ = encoder(encoder_input)
   x = ProbabilityDropout(encoder_input)([z_mean,z_var,encoder_input])
-  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  x = Dense(intermediate_dim, activation='relu')(x)
   x = ProbabilityDropout(intermediate_dim)([z_mean,z_var,x])
-  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  x = Dense(intermediate_dim, activation='relu')(x)
   x = ProbabilityDropout(intermediate_dim)([z_mean,z_var,x])
-  x = layers.Dense(intermediate_dim, activation='relu')(x)
+  x = Dense(intermediate_dim, activation='relu')(x)
   x = ProbabilityDropout(intermediate_dim)([z_mean,z_var,x])
-  out = layers.Dense(num_labels, activation="softmax")(x)
+  out = Dense(num_labels, activation="softmax")(x)
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
   vae_mlp.summary()
   return vae_mlp
