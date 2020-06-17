@@ -3,7 +3,7 @@ import tensorflow as tf
 import keras.backend as K
 import multiprocessing as mp
 
-class TSNE:
+class TSNE_mp:
     @classmethod
     def Hbeta(cls, D, beta):
         P = np.exp(-D * beta)

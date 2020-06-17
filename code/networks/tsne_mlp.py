@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
 import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
-
+import utils
 
 # Using Tensorflow
 #from tensorflow import keras
@@ -33,7 +33,7 @@ from keras.initializers import RandomNormal
 from keras.optimizers import SGD
 from keras.utils import plot_model, to_categorical
 from keras.datasets import cifar10, mnist
-import tsne_sp 
+import tsne_sp
 
 # Setings
 plt.style.use('ggplot')
@@ -60,43 +60,6 @@ combined_model_path = 'models/combined.h5'
 control_model_path = 'models/control.h5'
 p_path = 'models/p.npy'
 
-def load_minst_data(sparse):
-  # load mnist dataset
-  (x_train, y_train), (x_test, y_test) = mnist.load_data()
-
-  # compute the number of labels
-  num_labels = len(np.unique(y_train))
-
-  # image dimensions (assumed square)
-  image_size = x_train.shape[1]
-  input_size = image_size * image_size
-
-  # resize and normalize
-  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255
-  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255
-
-  # convert to one-hot vector
-  if not sparse:
-    y_train = to_categorical(y_train)
-    y_test = to_categorical(y_test)
-
-  return (x_train, y_train), (x_test, y_test), num_labels
-
-def load_cifar10_data():
-  print("Loading cifar10")
-  # load the CIFAR10 data
-  keras.backend.set_image_data_format('channels_first')
-  (x_train, y_train), (x_test, y_test) = cifar10.load_data()
-  n, channel, row, col = x_train.shape
-
-  x_train = x_train.reshape(-1, channel * row * col).astype('float32') / 255
-  x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255
-
-  # Convert class vectors to binary class matrices.
-  y_train = to_categorical(y_train, 10)
-  y_test = to_categorical(y_test, 10)
-
-  return (x_train, y_train), (x_test, y_test)
 
 def create_ptsne_embedding_model(x_train):
   input = Input((x_train.shape[1],))
@@ -269,9 +232,9 @@ if __name__ == '__main__':
 
   args = parser.parse_args()
   if args.dataset == 'mnist':
-    (x_train, y_train), (x_test, y_test), num_labels = load_minst_data(args.sparse)
+    (x_train, y_train), (x_test, y_test), num_labels,y_test_cat = utils.load_minst_data(args.sparse)
   else:
-    (x_train, y_train), (x_test, y_test)  = load_cifar10_data()
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = utils.load_cifar10_data()
 
   # Create embedding model
   #embedding_model = fit_embedding_model(x_train, override)
