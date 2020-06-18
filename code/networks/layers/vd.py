@@ -167,50 +167,7 @@ class ConvVarDropout(layers.Layer):
     else:
       return output
 
-def negative_dkl(variational_params=None,
-                 clip_alpha=None,
-                 eps=common.EPSILON,
-                 log_alpha=None):
-  """Compute the negative kl-divergence loss term.
 
-  Computes the negative kl-divergence between the log-uniform prior over the
-  weights and the variational posterior over the weights for each element
-  in the set of variational parameters. Each contribution is summed and the
-  sum is returned as a scalar Tensor.
-
-  The true kl-divergence is intractable, so we compute the tight approximation
-  from https://arxiv.org/abs/1701.05369.
-
-  Args:
-    variational_params: 2-tuple of Tensors, where the first tensor is the \theta
-      values and the second contains the log of the \sigma^2 values.
-    clip_alpha: Int or None. If integer, we clip the log \alpha values to
-      [-clip_alpha, clip_alpha]. If None, don't clip the values.
-    eps: Small constant value to use in log and sqrt operations to avoid NaNs.
-    log_alpha: float32 tensor of log alpha values.
-  Returns:
-    Output scalar Tensor containing the sum of all negative kl-divergence
-    contributions for each element in the input variational_params.
-
-  Raises:
-    RuntimeError: If the variational_params argument is not a 2-tuple.
-  """
-
-  if variational_params is not None:
-    w, log_sigma2 = variational_params
-
-  if log_alpha is None:
-    log_alpha = compute_log_alpha(log_sigma2, w, eps, clip_alpha)
-
-  # Constant values for approximating the kl divergence
-  k1, k2, k3 = 0.63576, 1.8732, 1.48695
-  c = -k1
-
-  # Compute each term of the KL and combine
-  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.log1p(tf.exp(tf.negative(log_alpha)))
-  eltwise_dkl = term_1 + term_2 + c
-  return -tf.reduce_sum(eltwise_dkl)
 
 
 def matmul_eval(
@@ -261,6 +218,9 @@ def matmul_train(
     output_shape = tf.shape(std_activation)
     return mu + std_activation * tf.random.normal(output_shape)
 
+def compute_log_sigma2(log_alpha, w, eps=EPSILON):
+    return log_alpha + tf.math.log(tf.square(w) + eps)
+
 def compute_log_alpha(log_sigma2, w, eps=EPSILON, value_limit=8.):
     log_alpha = log_sigma2 - tf.math.log(tf.square(w) + eps)
 
@@ -269,5 +229,48 @@ def compute_log_alpha(log_sigma2, w, eps=EPSILON, value_limit=8.):
       return tf.clip_by_value(log_alpha, -value_limit, value_limit)
     return log_alpha
 
-def compute_log_sigma2(log_alpha, w, eps=EPSILON):
-    return log_alpha + tf.math.log(tf.square(w) + eps)
+def negative_dkl(variational_params=None,
+                 clip_alpha=3.,
+                 eps=common.EPSILON,
+                 log_alpha=None):
+
+  if variational_params is not None:
+    w, log_sigma2 = variational_params
+
+  if log_alpha is None:
+    log_alpha = compute_log_alpha(log_sigma2, w, eps, clip_alpha)
+
+  # Constant values for approximating the kl divergence
+  k1, k2, k3 = 0.63576, 1.8732, 1.48695
+  c = -k1
+
+  # Compute each term of the KL and combine
+  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
+  term_2 = -0.5 * tf.log1p(tf.exp(tf.negative(log_alpha)))
+  eltwise_dkl = term_1 + term_2 + c
+  return -tf.reduce_sum(eltwise_dkl)
+
+def variational_dropout_dkl_loss(variational_params,
+                                 start_reg_ramp_up=0.,
+                                 end_reg_ramp_up=1000.,
+                                 warm_up=True):
+
+  log_alphas = [] 
+  for w, log_sigma2 in variational_params:
+    log_alphas.append(compute_log_alpha(log_sigma2, w))
+
+  # Calculate the kl-divergence weight for this iteration
+  step = tf.train.get_or_create_global_step()
+  current_step_reg = tf.maximum(0.0,tf.cast(step - start_reg_ramp_up, tf.float32))
+  fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
+
+  # Compute the dkl over the parameters and weight it
+  dkl_loss = tf.add_n([negative_dkl(log_alpha=a) for a in log_alphas])
+
+  if warm_up:
+    reg_scalar = fraction * 1
+
+  tf.summary.scalar('reg_scalar', reg_scalar)
+  dkl_loss = reg_scalar * dkl_loss
+
+  return dkl_loss
