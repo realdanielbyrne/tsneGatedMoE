@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "C:\\Users\\reald\\.conda\\envs\\capstone2\\python.exe",
+    "python.pythonPath": "/Users/daniel/opt/anaconda3/envs/ptsnemoe/bin/python",
     "files.exclude": {
       "**/.classpath": true,
       "**/.project": true,

@@ -2,6 +2,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import sys, os, datetime, shutil, zipfile, glob,math
 import numpy as np
 import argparse
+import plaidml.keras
+plaidml.keras.install_backend()
 
 # Using Base Keras
 import tensorflow as tf
@@ -50,7 +52,7 @@ if __name__ == '__main__':
 
   # Train
   model.compile('adam', loss="categorical_crossentropy",metrics=['accuracy'])
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,)
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE)
 
 
   # model accuracy on test dataset

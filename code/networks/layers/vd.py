@@ -46,7 +46,7 @@ class VarDropout(layers.Layer):
                             trainable=True)
 
     if self.log_sigma2_initializer is None:
-      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)      
+      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)
       self.log_sigma2_initializer = tf.random_uniform_initializer()
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
@@ -73,8 +73,10 @@ class VarDropout(layers.Layer):
       x = tf.nn.bias_add(x, self.b)
     if self.activation is not None:
       return self.activation(x)
-    return x
 
+    self.add_loss(variational_dropout_dkl_loss([self.w, self.log_sigma2]))
+    return x
+'''
 class ConvVarDropout(layers.Layer):
   def __init__(self,
                num_outputs,
@@ -123,7 +125,7 @@ class ConvVarDropout(layers.Layer):
                             trainable=True)
 
     if self.log_sigma2_initializer is None:
-      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)      
+      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)
       self.log_sigma2_initializer = tf.random_uniform_initializer()
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
@@ -142,7 +144,7 @@ class ConvVarDropout(layers.Layer):
   def call(self, inputs):
 
     if self.is_training:
-      output = nn.conv2d_train(
+      output = conv2d_train(
           x=inputs,
           variational_params=(self.kernel, self.log_sigma2),
           strides=self.strides,
@@ -151,7 +153,7 @@ class ConvVarDropout(layers.Layer):
           clip_alpha=self.clip_alpha,
           eps=self.eps)
     else:
-      output = nn.conv2d_eval(
+      output = conv2d_eval(
           x=inputs,
           variational_params=(self.kernel, self.log_sigma2),
           strides=self.strides,
@@ -166,10 +168,7 @@ class ConvVarDropout(layers.Layer):
       return self.activation(output)
     else:
       return output
-
-
-
-
+'''
 def matmul_eval(
       x,
       variational_params,
@@ -212,7 +211,7 @@ def matmul_train(
 
     # Compute the mean and standard deviation of the distributions over the
     # activations
-    mu = tf.matmul(x, w)        
+    mu = tf.matmul(x, w)
     std_activation = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_sigma2)) + eps)
 
     output_shape = tf.shape(std_activation)
@@ -229,16 +228,13 @@ def compute_log_alpha(log_sigma2, w, eps=EPSILON, value_limit=8.):
       return tf.clip_by_value(log_alpha, -value_limit, value_limit)
     return log_alpha
 
-def negative_dkl(variational_params=None,
+def negative_dkl(variational_params,
                  clip_alpha=3.,
-                 eps=common.EPSILON,
+                 eps=EPSILON,
                  log_alpha=None):
 
-  if variational_params is not None:
-    w, log_sigma2 = variational_params
-
-  if log_alpha is None:
-    log_alpha = compute_log_alpha(log_sigma2, w, eps, clip_alpha)
+  w, log_sigma2 = variational_params
+  log_alpha = compute_log_alpha(log_sigma2, w, eps, clip_alpha)
 
   # Constant values for approximating the kl divergence
   k1, k2, k3 = 0.63576, 1.8732, 1.48695
@@ -255,17 +251,12 @@ def variational_dropout_dkl_loss(variational_params,
                                  end_reg_ramp_up=1000.,
                                  warm_up=True):
 
-  log_alphas = [] 
-  for w, log_sigma2 in variational_params:
-    log_alphas.append(compute_log_alpha(log_sigma2, w))
-
   # Calculate the kl-divergence weight for this iteration
   step = tf.train.get_or_create_global_step()
   current_step_reg = tf.maximum(0.0,tf.cast(step - start_reg_ramp_up, tf.float32))
   fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
 
-  # Compute the dkl over the parameters and weight it
-  dkl_loss = tf.add_n([negative_dkl(log_alpha=a) for a in log_alphas])
+  dkl_loss = tf.add_n([negative_dkl(variational_params) for a in variational_params])
 
   if warm_up:
     reg_scalar = fraction * 1
