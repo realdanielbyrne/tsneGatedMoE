@@ -7,7 +7,7 @@ import argparse
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer
+from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer, Add, Concatenate
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
@@ -15,13 +15,13 @@ from layers.vd import VarDropout
 import utils
 
 # Setings
-DIMENSION = 768
-EPOCHS = 100
-BATCH_SIZE = 100
+DIMENSION = 784
+EPOCHS = 20
+BATCH_SIZE = 128
 intermediate_dim = 512
 batch_size = 128
 latent_dim = 16
-vae_epochs = 1
+vae_epochs = 4
 
 def dkl_qp(log_alpha):
     k1, k2, k3 = 0.63576, 1.8732, 1.48695; C = -k1
@@ -75,8 +75,8 @@ class  ProbabilityDropout(Layer):
 
 
       # push values that are close to zero, to zero, promotes sparse models which are more efficient
-      condition = tf.less(probs,self.zero_point)
-      probs = tf.where(condition,tf.zeros_like(probs),probs)
+      #condition = tf.less(probs,self.zero_point)
+      #probs = tf.where(condition,tf.zeros_like(probs),probs)
       
       # scales output after zers to encourage sum to be similar to sum before zeroing out connections
       scale_factor = tf.cast(1 / multiplier,tf.float32)
@@ -143,14 +143,15 @@ def create_model(x_train, num_labels, encoder):
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
 
-  model_in = Input(shape=(x_train.shape[1],), name='model_in')
-  x = ProbabilityDropout()([z_mean,z_var,model_in])
-  x = Dense(DIMENSION, activation='relu')(model_in)
-  x = VarDropout(DIMENSION)(x)
-  x = Dense(DIMENSION, activation='relu')(x)
-  x = VarDropout(DIMENSION)(x)
+  #model_in = Input(shape=(x_train.shape[1],), name='model_in')
+
+  x = ProbabilityDropout( name="prob_dropout")([z_mean,z_var,encoder_input])
+  x = Dense(300, activation='relu')(x)
+  x = VarDropout(300)(x)
+  x = Dense(100, activation='relu')(x)
+  x = VarDropout(100)(x)
   model_out = Dense(num_labels, activation='softmax', name='model_out')(x)
-  model = Model(model_in, model_out)
+  model = Model(encoder_input, model_out)
   model.summary()
   return model
 
@@ -187,10 +188,14 @@ if __name__ == '__main__':
   model = create_model(x_train, num_labels, encoder)
 
   # Train
-  model_input = model.get_layer("model_in").input  
+  model_input = model.get_layer("encoder_input").input  
   model_output = model.get_layer("model_out").output  
   model.compile('adam',loss = 'categorical_crossentropy',metrics=['accuracy'])
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE)
+
+  log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+  tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset
   score = model.evaluate(x_test, y_test_cat, batch_size=BATCH_SIZE)

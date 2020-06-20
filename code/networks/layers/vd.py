@@ -108,8 +108,6 @@ def matmul_train(
 
     # We expect a 2D input tensor, as in standard in fully-connected layers
     x.get_shape().assert_has_rank(2)
-    print(variational_params[0].shape)
-    print(variational_params[1].shape)
     assert(len(variational_params) == 2)
     assert(variational_params[0].shape == variational_params[1].shape)
     w, log_sigma2 = variational_params

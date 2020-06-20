@@ -16,7 +16,7 @@ import utils
 
 # Setings
 DROPOUT_RATE = .45
-DIMENSION = 1000
+DIMENSION = 300
 EPOCHS = 20
 BATCH_SIZE = 100
 
@@ -29,9 +29,9 @@ p_path = 'models/p.npy'
 def create_model(x_train, num_labels):
 
   model_in = Input(shape=(x_train.shape[1],), name='model_in')
-  x = Dense(DIMENSION, activation='relu')(model_in)
+  x = Dense(300, activation='relu')(model_in)
   x = Dropout(DROPOUT_RATE)(x)
-  x = Dense(DIMENSION, activation='relu')(x)
+  x = Dense(100, activation='relu')(x)
   x = Dropout(DROPOUT_RATE)(x)
   model_out = Dense(num_labels, activation='softmax')(x)
   model = Model(model_in, model_out)
@@ -56,8 +56,11 @@ if __name__ == '__main__':
   model = create_model(x_train,num_labels)
 
   # Train
+  log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+  tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
   model.compile('adam', loss="categorical_crossentropy",metrics=['accuracy'])
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE)
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
 
   # model accuracy on test dataset
