@@ -37,6 +37,7 @@ class VarDropout(layers.Layer):
     self.clip_alpha = clip_alpha
 
   def build(self, input_shape):
+
     input_shape = input_shape.as_list()
     input_hidden_size = input_shape[1]
     kernel_shape = [input_hidden_size, self.num_outputs]
@@ -46,7 +47,7 @@ class VarDropout(layers.Layer):
                             trainable=True)
 
     if self.log_sigma2_initializer is None:
-      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)
+      #self.log_sigma2_initializer = tf.constant_initializer(value=-10)
       self.log_sigma2_initializer = tf.random_uniform_initializer()
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
@@ -61,7 +62,8 @@ class VarDropout(layers.Layer):
       self.b = None
     self.built = True
 
-  def call(self,inputs, training = None):
+  def call(self, inputs, training = None):
+    
     if training:
       x = matmul_train(
           inputs, (self.w, self.log_sigma2), clip_alpha=self.clip_alpha)
@@ -73,102 +75,10 @@ class VarDropout(layers.Layer):
       x = tf.nn.bias_add(x, self.b)
     if self.activation is not None:
       return self.activation(x)
-
-    self.add_loss(variational_dropout_dkl_loss([self.w, self.log_sigma2]))
+    
+    loss = variational_dropout_dkl_loss([w, log_sigma2 ])
     return x
-'''
-class ConvVarDropout(layers.Layer):
-  def __init__(self,
-               num_outputs,
-               kernel_size,
-               strides,
-               padding,
-               activation = tf.keras.activations.relu,
-               kernel_initializer = tf.keras.initializers.RandomNormal,
-               bias_initializer = tf.keras.initializers.RandomNormal,
-               kernel_regularizer = tf.keras.regularizers.l1,
-               bias_regularizer =  tf.keras.regularizers.l1,
-               is_training=True,
-               trainable=True,
-               use_bias=False,
-               eps=common.EPSILON,
-               threshold=3.,
-               clip_alpha=8.,
-               **kwargs):
-    super(ConvVarDropout, self).__init__(
-        trainable=trainable,
-        **kwargs)
-    self.num_outputs = num_outputs
-    self.kernel_size = kernel_size
-    self.strides = [1, strides[0], strides[1], 1]
-    self.padding = padding.upper()
-    self.activation = activation
-    self.kernel_initializer = kernel_initializer
-    self.bias_initializer = bias_initializer
-    self.kernel_regularizer = kernel_regularizer
-    self.bias_regularizer = bias_regularizer
-    self.log_sigma2_initializer = log_sigma2_initializer
-    self.use_bias = use_bias
-    self.eps = eps
-    self.threshold = threshold
-    self.clip_alpha = clip_alpha
 
-  def build(self, input_shape):
-    input_shape = input_shape.as_list()
-    dims = input_shape[3]
-    kernel_shape = [
-        self.kernel_size[0], self.kernel_size[1], dims, self.num_outputs
-    ]
-
-    self.w = self.add_weight(shape = kernel_shape,
-                            initializer=self.kernel_initializer,
-                            trainable=True)
-
-    if self.log_sigma2_initializer is None:
-      #self.log_sigma2_initializer = tf.constant_initializer(value=-10, dtype=tf.float32)
-      self.log_sigma2_initializer = tf.random_uniform_initializer()
-
-    self.log_sigma2 = self.add_weight(shape = kernel_shape,
-                            initializer=self.kernel_initializer,
-                            trainable=True)
-
-    if self.use_bias:
-      self.b = self.add_weight(shape = (self.num_outputs,),
-                            initializer = self.bias_initializer,
-                            trainable = True)
-    else:
-      self.b = None
-    self.built = True
-
-
-  def call(self, inputs):
-
-    if self.is_training:
-      output = conv2d_train(
-          x=inputs,
-          variational_params=(self.kernel, self.log_sigma2),
-          strides=self.strides,
-          padding=self.padding,
-          data_format=self.data_format,
-          clip_alpha=self.clip_alpha,
-          eps=self.eps)
-    else:
-      output = conv2d_eval(
-          x=inputs,
-          variational_params=(self.kernel, self.log_sigma2),
-          strides=self.strides,
-          padding=self.padding,
-          data_format=self.data_format,
-          threshold=self.threshold,
-          eps=self.eps)
-
-    if self.use_bias:
-      output = tf.nn.bias_add(output, self.bias)
-    if self.activation is not None:
-      return self.activation(output)
-    else:
-      return output
-'''
 def matmul_eval(
       x,
       variational_params,
@@ -198,6 +108,8 @@ def matmul_train(
 
     # We expect a 2D input tensor, as in standard in fully-connected layers
     x.get_shape().assert_has_rank(2)
+    print(variational_params[0].shape)
+    print(variational_params[1].shape)
     assert(len(variational_params) == 2)
     assert(variational_params[0].shape == variational_params[1].shape)
     w, log_sigma2 = variational_params
@@ -248,7 +160,7 @@ def negative_dkl(variational_params,
 
 def variational_dropout_dkl_loss(variational_params,
                                  start_reg_ramp_up=0.,
-                                 end_reg_ramp_up=1000.,
+                                 end_reg_ramp_up=10000.,
                                  warm_up=True):
 
   # Calculate the kl-divergence weight for this iteration

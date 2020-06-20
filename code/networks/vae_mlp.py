@@ -124,9 +124,8 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
 
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
-  #x = ProbabilityDropout()([z_mean,z_var,encoder_input])
   x = layers.Dense(mlp_hidden_dim, activation='elu')(encoder_input)
-  #x = ProbabilityDropout()([z_mean,z_var,x])
+  x = ProbabilityDropout()([z_mean,z_var,x])
   x = layers.Dense(mlp_hidden_dim, activation='elu')(x)
   x = ProbabilityDropout()([z_mean,z_var,x])
   out = layers.Dense(num_labels, activation="softmax")(x)
@@ -141,7 +140,7 @@ if __name__ == '__main__':
   batch_size = 128
   latent_dim = 32
   vae_epochs = 3
-  epochs = 10
+  epochs = 20
   args = utils.parse_cmd()
   (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
   input_dim = output_dim = x_train.shape[-1]
@@ -156,7 +155,7 @@ if __name__ == '__main__':
       validation_data = (x_test, None))
 
   encoder.trainable = False
-  encoder.compile()
+  #encoder.compile()
 
   vae_mlp = create_vae_mlp(input_dim, latent_dim, num_labels, encoder)
   vae_mlp.compile(loss='categorical_crossentropy',
