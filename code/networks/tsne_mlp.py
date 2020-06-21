@@ -68,7 +68,7 @@ def create_ptsne_embedding_model(x_train):
   x = Dense(2048, activation="relu")(x)
   x = Dropout(rate=.2, name = "ptsne_embedding")(x)
 
-  ptsne = Dense(2, name="ptsne")(x)
+  ptsne = Dense(2, name="ptsne", activation="sigmoid")(x)
   model = Model(input, ptsne)
   model.summary()
 
@@ -211,7 +211,7 @@ def fit_embedding_model(x_train, override):
 
   return embedding_model
 
-def plot_ptsne_model(pred,y_test = None):
+def plot_ptsne_model(pred, y_test = None):
   plt.clf()
   fig = plt.figure(figsize=(5, 5))
   plt.scatter(pred[:, 0], pred[:, 1], c=y_test, marker='o', s=4, edgecolor='', alpha = 0.5)

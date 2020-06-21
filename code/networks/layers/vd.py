@@ -5,7 +5,57 @@ from __future__ import print_function
 import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
+
 EPSILON = 1e-8
+
+
+class ConstantGausianDropout(layers.Layer):
+  def __init__(self,
+               num_outputs,
+               initial_values,
+               activation = tf.keras.activations.relu,
+               use_bias=True,
+               trainable = False,
+               eps=EPSILON,
+               threshold=3.,
+               clip_alpha=8.,
+               **kwargs):
+    super(ConstantGausianDropout, self).__init__(**kwargs)
+    self.num_outputs = num_outputs
+    self.initial_values = initial_values
+    self.clip_alpha = clip_alpha
+    self.eps = eps
+    self.threshold = threshold
+
+  def call(self, inputs, training = None):
+    x,y = inputs
+    initial_values = self.initial_values
+    num_outputs = self.num_outputs
+
+    theta = initial_values[y][0]
+    log_sigma2 = initial_values[y][1]
+    log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, 8)
+
+    if self.clip_alpha is not None:
+      # Compute log_sigma2 again so that we can clip on the
+      # log alpha magnitudes
+      log_sigma2 = compute_log_sigma2(log_alpha, theta, EPSILON)
+
+    num_outputs = num_outputs
+    kernel_shape = [x.shape[1], num_outputs]
+
+    if training:
+      mu = x*theta
+      std = tf.sqrt(tf.square(x)*tf.exp(log_sigma2) + EPSILON)
+      val = mu + std * tf.random.normal(kernel_shape)
+      return val
+
+    else:
+      log_alpha = compute_log_alpha(log_sigma2, theta, eps, value_limit=None)
+      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
+      val = tf.matmul(x,theta * weight_mask)  
+      return val
+    
 
 class VarDropout(layers.Layer):
   def __init__(self,
@@ -122,10 +172,10 @@ def matmul_train(
     # Compute the mean and standard deviation of the distributions over the
     # activations
     mu = tf.matmul(x, w)
-    std_activation = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_sigma2)) + eps)
+    std = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_sigma2)) + eps)
 
-    output_shape = tf.shape(std_activation)
-    return mu + std_activation * tf.random.normal(output_shape)
+    output_shape = tf.shape(std)
+    return mu + std * tf.random.normal(output_shape)
 
 def compute_log_sigma2(log_alpha, w, eps=EPSILON):
     return log_alpha + tf.math.log(tf.square(w) + eps)

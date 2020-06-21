@@ -11,17 +11,11 @@ from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer, Ad
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
-from layers.vd import VarDropout
+from layers.vd import VarDropout, ConstantGausianDropout
 import utils
 
-# Setings
-DIMENSION = 784
-EPOCHS = 20
-BATCH_SIZE = 128
-intermediate_dim = 512
-batch_size = 128
-latent_dim = 16
-vae_epochs = 4
+
+
 
 def dkl_qp(log_alpha):
     k1, k2, k3 = 0.63576, 1.8732, 1.48695; C = -k1
@@ -38,58 +32,6 @@ def sparseness(log_alphas, thresh=3):
         N_active += n_active
         N_total += n_total
     return 1.0 - N_active/N_total
-
-class  ProbabilityDropout(Layer):
-  def __init__( self, 
-                zero_point = 1e-10,
-                **kwargs):
-    super(ProbabilityDropout, self).__init__(**kwargs)
-    self.zero_point = zero_point
-
-  def build(self, input_shape):
-    z_mean_shape, _, in_shape = input_shape
-    self.dim = z_mean_shape[-1]
-    self.num_outputs = in_shape[-1] 
-    return super().build(input_shape)
-
-  def call(self, inputs, training = None):
-    z_mean, z_var, x = inputs
-    batch = K.shape(z_mean)[0]
-    multiplier = self.num_outputs // batch
-
-    if training :
-      z_mean = tf.repeat(z_mean,repeats = multiplier, axis = 0)
-      z_var = tf.repeat(z_var,repeats = multiplier, axis = 0)
-
-      epsilon = K.random_normal(shape=(batch * multiplier, self.dim))
-      z = z_mean + tf.exp(0.5 * z_var) * epsilon
-      z = tf.reshape(z,shape=(batch,self.dim * multiplier))
-
-      # computes drop probability
-      def dropprob(p):
-        p_range = [K.min(p,axis = -1),K.max(p, axis = -1)]
-        p = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(p, p_range, nbins = self.num_outputs),dtype=tf.float32))
-        return p
-
-      probs = tf.map_fn(dropprob, z)
-
-
-      # push values that are close to zero, to zero, promotes sparse models which are more efficient
-      #condition = tf.less(probs,self.zero_point)
-      #probs = tf.where(condition,tf.zeros_like(probs),probs)
-      
-      # scales output after zers to encourage sum to be similar to sum before zeroing out connections
-      scale_factor = tf.cast(1 / multiplier,tf.float32)
-      return x * probs / scale_factor
-    return x
-
-  def get_config(self):
-    return {"zero_point":zero_point}
-      
-  def compute_output_shape(self, input_shape):
-    _, _, in_shape = input_shape
-    return in_shape[-1]
-
 
 class Sampling(Layer):
 
@@ -128,6 +70,7 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   decoder_output = decoder(z)
   vae = keras.Model(encoder_input, decoder_output, name = 'vae')
 
+
   # vae loss
   reconstruction_loss = losses.mse(encoder_input, decoder_output)
   reconstruction_loss *= input_dim
@@ -139,28 +82,36 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   #vae.summary()
   return vae, encoder
 
-def create_model(x_train, num_labels, encoder):
-  encoder_input = encoder.get_layer("encoder_input").input
-  z_mean, z_var, z = encoder(encoder_input)
+def create_model(x_train, y_train, initial_values, num_labels, encoder):
+  inputs = keras.layers.Input(shape = x_train.shape[-1], name='y_in')
+  y_in = keras.layers.Input(shape = y_train.shape[-1], name='y_in')
+  x = ConstantGausianDropout(x_train.shape[-1])([inputs,y_in])
 
-  #model_in = Input(shape=(x_train.shape[1],), name='model_in')
-
-  x = ProbabilityDropout( name="prob_dropout")([z_mean,z_var,encoder_input])
   x = Dense(300, activation='relu')(x)
   x = VarDropout(300)(x)
   x = Dense(100, activation='relu')(x)
   x = VarDropout(100)(x)
   model_out = Dense(num_labels, activation='softmax', name='model_out')(x)
-  model = Model(encoder_input, model_out)
+  model = Model([inputs,y_in], model_out)
   model.summary()
   return model
 
 
-
 if __name__ == '__main__':
+
+  # Setings
+  DIMENSION = 784
+  EPOCHS = 100
+  BATCH_SIZE = 128
+  intermediate_dim = 512
+  batch_size = 128
+
+  latent_dim = 2
+  vae_epochs = 10
+
   parser = argparse.ArgumentParser(description='Control MLP Classifier')
   parser.add_argument("-s", "--sparse",
-                      action='store_false',
+                      default=True,
                       help="Use sparse, integer encoding, instead of one-hot")
 
   args = parser.parse_args()
@@ -168,24 +119,43 @@ if __name__ == '__main__':
   # parameters
   save_dir = os.path.join(os.getcwd(), 'saved_models')
   model_name = 'basicmlp.h5'
-
   args = parser.parse_args()
-  (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(args.sparse)
-  input_dim = output_dim = x_train.shape[-1]
 
+
+  (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(True)
+  input_dim = output_dim = x_train.shape[-1]
+  
   vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
   vae.compile(optimizer='adam')
 
+  
   # train the autoencoder
   vae.fit(x_train,
       epochs = vae_epochs,
       batch_size = batch_size,
       validation_data = (x_test, None))
 
-  encoder.trainable = False
-  #encoder.compile()
+  # fixed filter model
+  z, _, _ = encoder.predict(x_test, batch_size=batch_size)
+  nb_classes = 10
+  
+  
+  initial_values = [
+    z[y_test ==0][0],
+    z[y_test ==1][0],
+    z[y_test ==2][0],
+    z[y_test ==3][0],
+    z[y_test ==4][0],
+    z[y_test ==5][0],
+    z[y_test ==6][0],
+    z[y_test ==7][0],
+    z[y_test ==8][0],
+    z[y_test ==9][0],
+  ]
 
-  model = create_model(x_train, num_labels, encoder)
+
+
+  model = create_model(x_train, y_train, initial_values, num_labels, encoder)
 
   # Train
   model_input = model.get_layer("encoder_input").input  
