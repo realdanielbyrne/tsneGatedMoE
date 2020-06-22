@@ -49,10 +49,8 @@ def load_minst_data(categorical):
   if categorical:
     y_train = to_categorical(y_train)
     y_test_cat = to_categorical(y_test)
-  else:
-    y_test_cat = None
 
-  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
+  return (x_train, y_train), (x_test, y_test), num_labels
 
 def load_cifar10_data(categorical):
   # load the CIFAR10 data
@@ -69,11 +67,8 @@ def load_cifar10_data(categorical):
   if categorical:
     # Convert class vectors to binary class matrices.
     y_train = to_categorical(y_train, 10)
-    y_test_cat = to_categorical(y_test, 10)
-  else:
-    y_test_cat = None
 
-  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
+  return (x_train, y_train), (x_test, y_test), num_labels
 
 
 

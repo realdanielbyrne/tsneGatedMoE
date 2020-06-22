@@ -51,7 +51,7 @@ if __name__ == '__main__':
   model_name = 'basicmlp.h5'
 
   args = parser.parse_args()
-  (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(args.sparse)
+  (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(True)
 
   model = create_model(x_train,num_labels)
 
@@ -64,6 +64,6 @@ if __name__ == '__main__':
 
 
   # model accuracy on test dataset
-  score = model.evaluate(x_test, y_test_cat, batch_size=BATCH_SIZE)
+  score = model.evaluate(x_test, y_test, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))

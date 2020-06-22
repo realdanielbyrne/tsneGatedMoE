@@ -8,7 +8,6 @@ from tensorflow.keras import backend as K
 
 EPSILON = 1e-8
 
-
 class ConstantGausianDropout(layers.Layer):
   def __init__(self,
                num_outputs,
@@ -16,24 +15,42 @@ class ConstantGausianDropout(layers.Layer):
                activation = tf.keras.activations.relu,
                use_bias=True,
                trainable = False,
-               eps=EPSILON,
                threshold=3.,
                clip_alpha=8.,
                **kwargs):
     super(ConstantGausianDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
-    self.initial_values = initial_values
     self.clip_alpha = clip_alpha
-    self.eps = eps
     self.threshold = threshold
+    initial_thetas, initial_log_sigma2s = initial_values
+
+    self.initial_thetas = tf.lookup.StaticHashTable(
+        initializer=tf.lookup.KeyValueTensorInitializer(
+            keys=tf.constant([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            values=tf.constant(initial_thetas),
+        ),
+        default_value=tf.constant(-1.),
+        name="class_weight"
+    )
+
+    self.initial_log_sigma2s = tf.lookup.StaticHashTable(
+        initializer=tf.lookup.KeyValueTensorInitializer(
+            keys=tf.constant([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            values=tf.constant(initial_log_sigma2s),
+        ),
+        default_value=tf.constant(-1.),
+        name="class_weight"
+    )
 
   def call(self, inputs, training = None):
     x,y = inputs
-    initial_values = self.initial_values
+    y = tf.cast(y,tf.int32)
+
     num_outputs = self.num_outputs
 
-    theta = initial_values[y][0]
-    log_sigma2 = initial_values[y][1]
+    theta = self.initial_thetas.lookup(y)
+    log_sigma2 = self.initial_log_sigma2s.lookup(y)
+
     log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, 8)
 
     if self.clip_alpha is not None:
@@ -51,7 +68,7 @@ class ConstantGausianDropout(layers.Layer):
       return val
 
     else:
-      log_alpha = compute_log_alpha(log_sigma2, theta, eps, value_limit=None)
+      log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, value_limit=None)
       weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
       val = tf.matmul(x,theta * weight_mask)  
       return val
@@ -208,7 +225,7 @@ def negative_dkl(variational_params,
 
 def variational_dropout_dkl_loss(variational_params,
                                  start_reg_ramp_up=0.,
-                                 end_reg_ramp_up=10000.,
+                                 end_reg_ramp_up=100000.,
                                  warm_up=True):
 
   # Calculate the kl-divergence weight for this iteration
