@@ -42,6 +42,7 @@ class ConstantGausianDropout(layers.Layer):
         name="class_weight"
     )
 
+
   def call(self, inputs, training = None):
     x,y = inputs
     y = tf.cast(y,tf.int32)
@@ -53,25 +54,25 @@ class ConstantGausianDropout(layers.Layer):
 
     log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, 8)
 
-    if self.clip_alpha is not None:
+ #   if self.clip_alpha is not None:
       # Compute log_sigma2 again so that we can clip on the
       # log alpha magnitudes
-      log_sigma2 = compute_log_sigma2(log_alpha, theta, EPSILON)
+#      log_sigma2 = compute_log_sigma2(log_alpha, theta, EPSILON)
 
     num_outputs = num_outputs
     kernel_shape = [x.shape[1], num_outputs]
 
-    if training:
-      mu = x*theta
-      std = tf.sqrt(tf.square(x)*tf.exp(log_sigma2) + EPSILON)
-      val = mu + std * tf.random.normal(kernel_shape)
-      return val
+#    if training:
+    mu = x*theta
+    std = tf.sqrt(tf.square(x)*tf.exp(log_sigma2) + EPSILON)
+    val = mu + std * tf.random.normal(kernel_shape)
+    return val
 
-    else:
-      log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, value_limit=None)
-      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
-      val = tf.matmul(x,theta * weight_mask)  
-      return val
+#    else:
+##      log_alpha = compute_log_alpha(log_sigma2, theta, EPSILON, value_limit=None)
+##      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
+#      val = tf.matmul(x,theta * weight_mask)  
+#      return val
     
 
 class VarDropout(layers.Layer):

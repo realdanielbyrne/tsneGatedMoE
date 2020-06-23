@@ -77,30 +77,32 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   return vae, encoder
 
 def create_model(x_train, y_train, initial_values, num_labels, encoder):
+  
   inputs = keras.layers.Input(shape = x_train.shape[-1], name='digits')
-  #y_in = keras.layers.Input(shape = y_train.shape[-1], name='y_in')
+  y_in = keras.layers.Input(shape = y_train.shape[-1], name='y_in')
+  x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
 
-  #x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
-  x = Dense(300, activation='relu')(inputs)
+  x = Dense(300, activation='relu')(x)
   #x = VarDropout(300)(x)
+
   x = Dropout(.2)(x)
   x = Dense(100, activation='relu')(x)
   x = Dropout(.2)(x)
+
   #x = VarDropout(100)(x)
   model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
-  model = Model(inputs, model_out)
+  model = Model([inputs,y_in], model_out)
   model.summary()
   return model
 
-
-def custom_train(model,x_train,y_train):
+def custom_train(model,x_train,y_train, yt):
   # Instantiate an optimizer.
   optimizer = keras.optimizers.Adam()
   # Instantiate a loss function.
   loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
-
+ 
   # prepare data  
-  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, yt))
   train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
 
   for epoch in range(EPOCHS):
@@ -117,7 +119,7 @@ def custom_train(model,x_train,y_train):
             # The operations that the layer applies
             # to its inputs are going to be recorded
             # on the GradientTape.
-            logits = model(x_batch_train, training=True)  # Logits for this minibatch
+            logits = model([x_batch_train, y_batch_train], training=True)  # Logits for this minibatch
 
             # Compute the loss value for this minibatch.
             loss_value = loss_fn(y_batch_train, logits)
@@ -143,13 +145,10 @@ DIMENSION = 784
 EPOCHS = 10
 intermediate_dim = 512
 BATCH_SIZE = 64
-
 latent_dim = 2
 vae_epochs = 1
 
 if __name__ == '__main__':
-
-
 
   parser = argparse.ArgumentParser(description='Control MLP Classifier')
   parser.add_argument("-s", "--sparse",
@@ -163,14 +162,12 @@ if __name__ == '__main__':
   model_name = 'basicmlp.h5'
   args = parser.parse_args()
 
-
   (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=False)
   input_dim = output_dim = x_train.shape[-1]
   
   vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
   vae.compile(optimizer='adam')
 
-  
   # train the autoencoder
   vae.fit(x_train,
       epochs = vae_epochs,
@@ -189,19 +186,19 @@ if __name__ == '__main__':
     initial_thetas.append(z[sample][0])
     initial_log_sigma2s.append(z[sample][1])
 
-  model = create_model(x_train, y_train, [initial_thetas,initial_log_sigma2s], num_labels, encoder)
+  yt = y_train.reshape(y_train.shape[0],1)
+  model = create_model(x_train, yt, [initial_thetas,initial_log_sigma2s], num_labels, encoder)
 
   # Train
-
   log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
   tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-  custom_train(model,x_train,y_train)
+  custom_train(model, x_train, y_train, yt)
 
   #model.compile('adam',loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
-  #model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
+  #model.fit([x_train, y_train], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset
-  score = model.evaluate(x_test, y_test, batch_size=BATCH_SIZE)
+  score = model.evaluate([x_test,y_test], y_test, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
