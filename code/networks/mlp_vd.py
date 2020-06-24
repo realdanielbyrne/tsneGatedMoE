@@ -76,11 +76,11 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   #vae.summary()
   return vae, encoder
 
-def create_model(x_train, y_train, initial_values, num_labels, encoder):
+def create_model(x_train, y_train, yt, initial_variational_params, num_labels, encoder, model_name):
   
   inputs = keras.layers.Input(shape = x_train.shape[-1], name='digits')
   y_in = keras.layers.Input(shape = y_train.shape[-1], name='y_in')
-  x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
+  x = ConstantGausianDropout(x_train.shape[-1], initial_variational_params, num_labels)([inputs,y_in])
 
   x = Dense(300, activation='relu')(x)
   #x = VarDropout(300)(x)
@@ -91,16 +91,14 @@ def create_model(x_train, y_train, initial_values, num_labels, encoder):
 
   #x = VarDropout(100)(x)
   model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
-  model = Model([inputs,y_in], model_out)
+  model = Model([inputs,y_in], model_out, name = model_name)
   model.summary()
   return model
 
-def custom_train(model,x_train,y_train, yt):
+def custom_train(model,x_train,y_train, yt, loss_fn):
   # Instantiate an optimizer.
   optimizer = keras.optimizers.Adam()
-  # Instantiate a loss function.
-  loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
- 
+
   # prepare data  
   train_dataset = tf.data.Dataset.from_tensor_slices((x_train, yt))
   train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
@@ -140,62 +138,99 @@ def custom_train(model,x_train,y_train, yt):
             )
             print("Seen so far: %s samples" % ((step + 1) * BATCH_SIZE))
 
+
+def get_varparams_class_samples(predictions, y_test):
+  initial_thetas = []
+  initial_log_sigma2s = []
+  
+  for x in range(num_labels):
+    targets = np.where(y_test == x)[0]
+    sample = targets[np.random.randint(targets.shape[0])]
+    initial_thetas.append(predictions[sample][0])
+    initial_log_sigma2s.append(predictions[sample][1])
+  
+  return initial_thetas,initial_log_sigma2s
+
+def get_varparams_class_means(predictions, y_test):
+  initial_thetas = []
+  initial_log_sigma2s = []
+
+  for x in range(num_labels):
+    targets = predictions[np.where(y_test == x)[0]]
+    means = np.mean(targets, axis = 0)
+    initial_thetas.append(means[0])
+    initial_log_sigma2s.append(means[1])
+    
+  return initial_thetas,initial_log_sigma2s
+
 # Setings
 DIMENSION = 784
 EPOCHS = 10
 intermediate_dim = 512
 BATCH_SIZE = 64
 latent_dim = 2
-vae_epochs = 1
+vae_epochs = 10
 
 if __name__ == '__main__':
 
   parser = argparse.ArgumentParser(description='Control MLP Classifier')
-  parser.add_argument("-s", "--sparse",
-                      default=True,
-                      help="Use sparse, integer encoding, instead of one-hot")
+  parser.add_argument("-c", "--categorical",
+                      default=False,
+                      help="Convert class vectors to binary class matrices ( One Hot Encoding ).")
+  parser.add_argument("-s", "--embedding_type",
+                      default='mean',
+                      help="embedding_type - sample: Samples a single x_test latent variable for each class\n\
+                            mean: Averages all x_test latent variables")
 
   args = parser.parse_args()
 
   # parameters
+  model_name = 'mlp_cgvd.h5'
   save_dir = os.path.join(os.getcwd(), 'saved_models')
-  model_name = 'basicmlp.h5'
-  args = parser.parse_args()
+  log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+  tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
+  # load data
   (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=False)
   input_dim = output_dim = x_train.shape[-1]
   
+  # create and compile vae
   vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
   vae.compile(optimizer='adam')
 
-  # train the autoencoder
+  # train the vae
   vae.fit(x_train,
       epochs = vae_epochs,
       batch_size = BATCH_SIZE,
       validation_data = (x_test, None))
 
-  # fixed filter model
-  z, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
-  
-  initial_thetas = []
-  initial_log_sigma2s = []
+  # gather predictions for the test batch
+  predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
 
-  for x in range(10):
-    targets = np.where(y_test == x)[0]
-    sample = targets[np.random.randint(targets.shape[0])]
-    initial_thetas.append(z[sample][0])
-    initial_log_sigma2s.append(z[sample][1])
+  if args.embedding_type == 'sample':
+    initial_variational_params = get_varparams_class_samples(predictions, y_test)
+  else:
+    initial_variational_params = get_varparams_class_means(predictions, y_test)
+
 
   yt = y_train.reshape(y_train.shape[0],1)
-  model = create_model(x_train, yt, [initial_thetas,initial_log_sigma2s], num_labels, encoder)
 
+  # create model under test
+  model = create_model(x_train, yt, initial_variational_params, num_labels, encoder, model_name)
+  
+  # Define First term of ELBO Loss 
+  # kl loss is collected at each layer
+  if args.categorical:
+    loss_fn = keras.losses.CategoricalCrossentropy(from_logits=False)
+  else:
+    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+  
   # Train
-  log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-  tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-
-  custom_train(model, x_train, y_train, yt)
-
-  #model.compile('adam',loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
+  # use custom training loop to assist in debugging
+  custom_train(model, x_train, y_train, yt, loss_fn)
+  
+  # use graph training for speed
+  #model.compile('adam',loss = loss_fn, metrics=['accuracy'])
   #model.fit([x_train, y_train], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset

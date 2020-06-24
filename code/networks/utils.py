@@ -45,8 +45,8 @@ def load_minst_data(categorical):
   x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255
   x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255
 
-  # convert to one-hot vector
   if categorical:
+    # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train)
     y_test_cat = to_categorical(y_test)
 
@@ -65,7 +65,7 @@ def load_cifar10_data(categorical):
   x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255
 
   if categorical:
-    # Convert class vectors to binary class matrices.
+    # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train, 10)
 
   return (x_train, y_train), (x_test, y_test), num_labels
