@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tensorflow.keras import layers
+
 from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer, Add, Concatenate
 from tensorflow.keras import backend as K
 
@@ -13,19 +13,24 @@ class ConstantGausianDropout(Layer):
   def __init__(self,
                num_outputs,
                initial_values,
-               num_labels,
                activation = tf.keras.activations.relu,
-               use_bias=True,
-               trainable = False,
+               use_bias = True,
                threshold=3.,
-               clip_alpha=8.,
+               clip_alpha=None,
                **kwargs):
+
     super(ConstantGausianDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
-    self.clip_alpha = clip_alpha
+    self.activation = activation
+    self.use_bias = use_bias
     self.threshold = threshold
-    initial_thetas, initial_log_sigma2s = initial_values
+    self.clip_alpha = clip_alpha
 
+    # unpack variational parameters, and extrapolate the number of classes for the lookup  
+    initial_thetas, initial_log_sigma2s = initial_values
+    num_labels = len(initial_thetas)
+
+    # define static lookups for pre-calculated datasets
     theta_lookup = tf.lookup.StaticHashTable(
         initializer=tf.lookup.KeyValueTensorInitializer(
             keys=tf.constant(tf.range(num_labels)),
@@ -34,7 +39,7 @@ class ConstantGausianDropout(Layer):
         default_value=tf.constant(0.),
         name="class_weight"
     )
-    self.initial_thetas = theta_lookup
+    self.theta_lookup = theta_lookup
 
     log_sigma2_lookup = tf.lookup.StaticHashTable(
         initializer=tf.lookup.KeyValueTensorInitializer(
@@ -44,40 +49,57 @@ class ConstantGausianDropout(Layer):
         default_value=tf.constant(0.),
         name="class_weight"
     )
-    self.initial_log_sigma2s = log_sigma2_lookup
+    self.log_sigma2_lookup = log_sigma2_lookup
 
   def call(self, inputs, training = None):
     x,y = inputs
     y = tf.cast(y,tf.int32)
     num_outputs = self.num_outputs
 
-    theta = self.initial_thetas.lookup(y)
-    log_sigma2 = self.initial_log_sigma2s.lookup(y)
+    theta = self.theta_lookup.lookup(y)
+    log_sigma2 = self.log_sigma2_lookup.lookup(y)
+    
+    # repack parameters for convience 
     variational_params = (theta, log_sigma2)
+
+    # compute dropout rate
     log_alpha = compute_log_alpha(variational_params, eps = EPSILON) 
 
- #   if self.clip_alpha is not None:
-      # Compute log_sigma2 again so that we can clip on the
-      # log alpha magnitudes
-#      log_sigma2 = compute_log_sigma2(log_alpha, theta, EPSILON)
+    # Compute log_sigma2 again so that we can clip on the log alpha magnitudes
+    if self.clip_alpha is not None:
+      log_sigma2 = compute_log_sigma2(log_alpha, theta, EPSILON)
 
-    num_outputs = num_outputs
-    kernel_shape = [x.shape[1], num_outputs]
+    if training:
+      mu = x * theta
+      std = tf.sqrt(tf.square(x) * tf.exp(log_sigma2) + EPSILON)
 
-#    if training:
-    mu = x * theta
-    std = tf.sqrt(tf.square(x)*tf.exp(log_sigma2) + EPSILON)
-    val = mu + std * tf.random.normal(kernel_shape)
-    return val
+      kernel_shape = [x.shape[1], num_outputs]
+      val = mu + tf.matmul(std, tf.random.normal(kernel_shape))        
 
-#    else:
-#      log_alpha = [compute_log_alpha(a, eps = EPSILON, value_limit = None) for a in variational_params]
-#      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
-#      val = tf.matmul(x,theta * weight_mask)  
-#      return val
+    else:
+      log_alpha = compute_log_alpha(variational_params, eps = EPSILON) 
+      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
+      val = tf.matmul(x,theta * weight_mask)  
+
+    # Apply an activation function to the output
+    if self.activation is not None:
+      return self.activation(val)
+    else:
+      return val
+
+  def get_config(self):
+    return {
+      "num_outputs" : self.num_outputs,
+      "clip_alpha" : self.clip_alpha,
+      "threshold" : self.threshold,
+      "theta_lookup" : self.theta_lookup,
+      "log_sigma2_lookup" : self.log_sigma2_lookup,
+    }
+      
+  def compute_output_shape(self, input_shape):
+    return  [input_shape.shape[0], self.num_outputs]
     
-
-class VarDropout(layers.Layer):
+class VarDropout(Layer):
   def __init__(self,
                num_outputs,
                activation = tf.keras.activations.relu,

@@ -38,6 +38,8 @@ class Sampling(Layer):
 def create_encoder(input_dim, intermediate_dim, latent_dim):
   encoder_input = Input(shape=(input_dim,), name='encoder_input')
   x = Dense(intermediate_dim, activation='relu')(encoder_input)
+  x = Dense(intermediate_dim//2, activation='relu')(x)
+
   z_mean = Dense(latent_dim, name='z_mean')(x)
   z_var = Dense(latent_dim, name='z_var')(x)
   z = Sampling()([z_mean, z_var])
@@ -76,23 +78,47 @@ def create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim = None)
   #vae.summary()
   return vae, encoder
 
-def create_model(x_train, y_train, yt, initial_variational_params, num_labels, encoder, model_name):
+def create_model(
+                x_train, 
+                yt,
+                initial_values, 
+                num_labels, 
+                encoder, 
+                model_name,
+                dropout_type = 'var'):
   
-  inputs = keras.layers.Input(shape = x_train.shape[-1], name='digits')
-  y_in = keras.layers.Input(shape = y_train.shape[-1], name='y_in')
-  x = ConstantGausianDropout(x_train.shape[-1], initial_variational_params, num_labels)([inputs,y_in])
+  # Define Inputs
+  inputs = keras.layers.Input(shape = (x_train.shape[-1],), name='digits')
+  y_in = keras.layers.Input(shape = (yt.shape[-1],), name='y_in')
 
-  x = Dense(300, activation='relu')(x)
-  #x = VarDropout(300)(x)
+  # ConstantGausianDropout first to establish a pattern
+  x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
+  
+  U = 300
+  x = Dense(U, activation='relu')(x)
+  if dropout_type is 'var':
+    x = VarDropout(U)(x)
+  else: 
+    x = Dropout(.2)(x)
 
-  x = Dropout(.2)(x)
-  x = Dense(100, activation='relu')(x)
-  x = Dropout(.2)(x)
+  U = 100
+  x = Dense(U, activation='relu')(x)
+  if dropout_type is 'var':
+    x = VarDropout(U)(x)
+  else: 
+    x = Dropout(.2)(x)
 
-  #x = VarDropout(100)(x)
+  U = 100
+  x = Dense(U, activation='relu')(x)
+  if dropout_type is 'var':
+    x = VarDropout(U)(x)
+  else: 
+    x = Dropout(.2)(x)
+
   model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
   model = Model([inputs,y_in], model_out, name = model_name)
   model.summary()
+  
   return model
 
 def custom_train(model,x_train,y_train, yt, loss_fn):
@@ -138,7 +164,6 @@ def custom_train(model,x_train,y_train, yt, loss_fn):
             )
             print("Seen so far: %s samples" % ((step + 1) * BATCH_SIZE))
 
-
 def get_varparams_class_samples(predictions, y_test):
   initial_thetas = []
   initial_log_sigma2s = []
@@ -163,13 +188,14 @@ def get_varparams_class_means(predictions, y_test):
     
   return initial_thetas,initial_log_sigma2s
 
-# Setings
+# Settings
 DIMENSION = 784
-EPOCHS = 10
+EPOCHS = 1
 intermediate_dim = 512
 BATCH_SIZE = 64
 latent_dim = 2
-vae_epochs = 10
+vae_epochs = 1
+
 
 if __name__ == '__main__':
 
@@ -190,6 +216,13 @@ if __name__ == '__main__':
   log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
   tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
+  # Create a callback that saves the model's weights
+  checkpoint_path = "training\\cp.ckpt"
+  checkpoint_dir = os.path.dirname(checkpoint_path)
+  cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                  save_weights_only=True,
+                                                  verbose=1)
+
   # load data
   (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=False)
   input_dim = output_dim = x_train.shape[-1]
@@ -198,32 +231,37 @@ if __name__ == '__main__':
   vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
   vae.compile(optimizer='adam')
 
+  if os.path.isfile(checkpoint_path):
+    vae.load_weights(checkpoint_path)
+  
   # train the vae
   vae.fit(x_train,
       epochs = vae_epochs,
       batch_size = BATCH_SIZE,
-      validation_data = (x_test, None))
+      validation_data = (x_test, None),
+      #callbacks=[cp_callback]
+      )
+  vae.save_weights(checkpoint_path)
 
   # gather predictions for the test batch
   predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
 
   if args.embedding_type == 'sample':
-    initial_variational_params = get_varparams_class_samples(predictions, y_test)
+    initial_values = get_varparams_class_samples(predictions, y_test)
   else:
-    initial_variational_params = get_varparams_class_means(predictions, y_test)
-
+    initial_values = get_varparams_class_means(predictions, y_test)
 
   yt = y_train.reshape(y_train.shape[0],1)
 
   # create model under test
-  model = create_model(x_train, yt, initial_variational_params, num_labels, encoder, model_name)
+  model = create_model(x_train, yt, initial_values, num_labels, encoder, model_name)
   
   # Define First term of ELBO Loss 
   # kl loss is collected at each layer
   if args.categorical:
-    loss_fn = keras.losses.CategoricalCrossentropy(from_logits=False)
+    loss_fn = keras.losses.CategoricalCrossentropy(from_logits = False)
   else:
-    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits = False)
   
   # Train
   # use custom training loop to assist in debugging
@@ -237,3 +275,4 @@ if __name__ == '__main__':
   score = model.evaluate([x_test,y_test], y_test, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
+
