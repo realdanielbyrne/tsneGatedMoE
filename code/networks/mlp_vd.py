@@ -95,22 +95,13 @@ def create_model(
   x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
   
   x = Dense(300, activation='relu', name = 'Dense1')(x)
-  if dropout_type == 'var':
-    x = VarDropout(300)(x)
-  else: 
-    x = Dropout(.2)(x)
+  x = VarDropout(300)(x)
 
   x = Dense(100, activation='relu', name = 'Dense2')(x)
-  if dropout_type == 'var':
-    x = VarDropout(100)(x)
-  else: 
-    x = Dropout(.2)(x)
+  x = VarDropout(100)(x)
 
   x = Dense(100, activation='relu', name = 'Dense3')(x)
-  if dropout_type == 'var':
-    x = VarDropout(100)(x)
-  else: 
-    x = Dropout(.2)(x)
+  x = VarDropout(100)(x)
 
   model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
   model = Model([inputs,y_in], model_out, name = model_name)

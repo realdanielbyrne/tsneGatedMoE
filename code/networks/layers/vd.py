@@ -255,7 +255,7 @@ def negative_dkl(variational_params,
 
   # Compute each term of the KL and combine
   term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.log1p(tf.exp(tf.negative(log_alpha)))
+  term_2 = -0.5 * tf.math.log1p(tf.exp(tf.negative(log_alpha)))
   eltwise_dkl = term_1 + term_2 + c
   return -tf.reduce_sum(eltwise_dkl)
 
@@ -270,7 +270,7 @@ def variational_dropout_dkl_loss(variational_params,
   current_step_reg = tf.maximum(0.,current_step_reg)
   fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
 
-  dkl_loss = tf.add_n([negative_dkl(a) for a in variational_params])
+  dkl_loss = negative_dkl(variational_params)
 
   if warm_up:
     reg_scalar = fraction * 1
