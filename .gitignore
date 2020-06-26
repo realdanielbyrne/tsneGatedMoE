@@ -1,3 +1,5 @@
 .vscode/settings.json
 
 /logs
+/code/networks/__pycache__
+/code/networks/layers/__pycache__/

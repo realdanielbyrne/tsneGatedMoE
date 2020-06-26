@@ -94,24 +94,21 @@ def create_model(
   # ConstantGausianDropout first to establish a pattern
   x = ConstantGausianDropout(x_train.shape[-1], initial_values)([inputs,y_in])
   
-  U = 300
-  x = Dense(U, activation='relu')(x)
-  if dropout_type is 'var':
-    x = VarDropout(U)(x)
+  x = Dense(300, activation='relu', name = 'Dense1')(x)
+  if dropout_type == 'var':
+    x = VarDropout(300)(x)
   else: 
     x = Dropout(.2)(x)
 
-  U = 100
-  x = Dense(U, activation='relu')(x)
-  if dropout_type is 'var':
-    x = VarDropout(U)(x)
+  x = Dense(100, activation='relu', name = 'Dense2')(x)
+  if dropout_type == 'var':
+    x = VarDropout(100)(x)
   else: 
     x = Dropout(.2)(x)
 
-  U = 100
-  x = Dense(U, activation='relu')(x)
-  if dropout_type is 'var':
-    x = VarDropout(U)(x)
+  x = Dense(100, activation='relu', name = 'Dense3')(x)
+  if dropout_type == 'var':
+    x = VarDropout(100)(x)
   else: 
     x = Dropout(.2)(x)
 
@@ -121,7 +118,7 @@ def create_model(
   
   return model
 
-def custom_train(model,x_train,y_train, yt, loss_fn):
+def custom_train(model,x_train, y_train, yt, loss_fn):
   # Instantiate an optimizer.
   optimizer = keras.optimizers.Adam()
 
@@ -265,11 +262,11 @@ if __name__ == '__main__':
   
   # Train
   # use custom training loop to assist in debugging
-  custom_train(model, x_train, y_train, yt, loss_fn)
+  #custom_train(model, x_train, y_train, yt, loss_fn)
   
   # use graph training for speed
-  #model.compile('adam',loss = loss_fn, metrics=['accuracy'])
-  #model.fit([x_train, y_train], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
+  model.compile('adam',loss = loss_fn, metrics=['accuracy'])
+  model.fit([x_train, yt], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset
   score = model.evaluate([x_test,y_test], y_test, batch_size=BATCH_SIZE)

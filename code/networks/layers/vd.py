@@ -6,6 +6,7 @@ import tensorflow as tf
 
 from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Layer, Add, Concatenate
 from tensorflow.keras import backend as K
+from tensorflow.python.eager import context
 
 EPSILON = 1e-8
 
@@ -83,9 +84,10 @@ class ConstantGausianDropout(Layer):
 
     # Apply an activation function to the output
     if self.activation is not None:
-      return self.activation(val)
-    else:
-      return val
+      val = self.activation(val)
+    
+    # Hack to fix tensorflow 2.0 bug that does not call self.compute_output_shape on its own
+    return tf.reshape(val, self.compute_output_shape(tf.shape(x)))
 
   def get_config(self):
     return {
@@ -134,7 +136,7 @@ class VarDropout(Layer):
     input_hidden_size = input_shape[1]
     kernel_shape = [input_hidden_size, self.num_outputs]
 
-    self.w = self.add_weight(shape = kernel_shape,
+    self.theta = self.add_weight(shape = kernel_shape,
                             initializer=self.kernel_initializer,
                             trainable=True)
 
@@ -157,19 +159,30 @@ class VarDropout(Layer):
   def call(self, inputs, training = None):
     
     if training:
-      x = matmul_train(
-          inputs, (self.w, self.log_sigma2), clip_alpha=self.clip_alpha)
+      x = matmul_train (
+        inputs, (self.theta, self.log_sigma2), clip_alpha = self.clip_alpha)
     else:
-      x = matmul_eval(
-          inputs, (self.w, self.log_sigma2), threshold=self.threshold)
+      x = matmul_eval (
+        inputs, (self.theta, self.log_sigma2), threshold = self.threshold)
 
     if self.use_bias:
       x = tf.nn.bias_add(x, self.b)
-    if self.activation is not None:
-      return self.activation(x)
     
-    loss = variational_dropout_dkl_loss([w, log_sigma2 ])
+    if self.activation is not None:
+      x = self.activation(x)
+    
+    loss = variational_dropout_dkl_loss([ self.theta, self.log_sigma2 ])
+    self.add_loss(loss)
+
+    is_executing_eagerly = context.executing_eagerly()
+    if not is_executing_eagerly:
+      x.set_shape(x.get_shape())
+
     return x
+    
+
+  def compute_output_shape(self, input_shape):
+    return  [input_shape.shape[0], self.num_outputs]
 
 def matmul_eval(
       x,
@@ -195,7 +208,7 @@ def matmul_eval(
 def matmul_train(
       x,
       variational_params,
-      clip_alpha=3.,
+      clip_alpha=None,
       eps=EPSILON):
 
     # We expect a 2D input tensor, as in standard in fully-connected layers
@@ -208,8 +221,8 @@ def matmul_train(
       # Compute the log_alphas and then compute the
       # log_sigma2 again so that we can clip on the
       # log alpha magnitudes
-      log_alpha = compute_log_alpha(log_sigma2, w, eps, clip_alpha)
-      log_sigma2 = compute_log_sigma2(log_alpha, w, eps)
+      log_alpha = compute_log_alpha(variational_params, eps, clip_alpha)
+      log_sigma2 = compute_log_sigma2(variational_params, eps)
 
     # Compute the mean and standard deviation of the distributions over the
     # activations
@@ -248,12 +261,13 @@ def negative_dkl(variational_params,
 
 def variational_dropout_dkl_loss(variational_params,
                                  start_reg_ramp_up=0.,
-                                 end_reg_ramp_up=100000.,
+                                 end_reg_ramp_up=10000.,
                                  warm_up=True):
 
   # Calculate the kl-divergence weight for this iteration
-  step = tf.train.get_or_create_global_step()
-  current_step_reg = tf.maximum(0.0,tf.cast(step - start_reg_ramp_up, tf.float32))
+  step = tf.cast(tf.compat.v1.train.get_or_create_global_step(),tf.float32)
+  current_step_reg = step - tf.cast(start_reg_ramp_up,tf.float32)
+  current_step_reg = tf.maximum(0.,current_step_reg)
   fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
 
   dkl_loss = tf.add_n([negative_dkl(a) for a in variational_params])
