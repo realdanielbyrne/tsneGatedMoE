@@ -105,13 +105,8 @@ class VarDropout(Layer):
                num_outputs = None,
                activation = tf.keras.activations.relu,
                kernel_initializer = tf.keras.initializers.RandomNormal,
-               bias_initializer = tf.keras.initializers.RandomNormal,
-               kernel_regularizer = tf.keras.regularizers.l1,
-               bias_regularizer =  tf.keras.regularizers.l1,
                log_sigma2_initializer = None,
-               activity_regularizer = None,
-               use_bias=False,
-               trainable = True,
+               use_bias=True,
                eps=EPSILON,
                threshold=3.,
                clip_alpha=8.,
@@ -120,9 +115,6 @@ class VarDropout(Layer):
     self.num_outputs = num_outputs
     self.activation = activation
     self.kernel_initializer = kernel_initializer
-    self.bias_initializer = bias_initializer
-    self.kernel_regularizer = kernel_regularizer,
-    self.bias_regularizer = bias_regularizer,
     self.log_sigma2_initializer = log_sigma2_initializer
     self.use_bias = use_bias
     self.eps = eps
@@ -141,8 +133,8 @@ class VarDropout(Layer):
                             trainable=True)
 
     if self.log_sigma2_initializer is None:
-      #self.log_sigma2_initializer = tf.constant_initializer(value=-10)
-      self.log_sigma2_initializer = tf.random_uniform_initializer()
+      self.log_sigma2_initializer = tf.constant_initializer(value=-10)
+      #self.log_sigma2_initializer = tf.random_uniform_initializer()
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
                             initializer=self.kernel_initializer,
@@ -150,7 +142,7 @@ class VarDropout(Layer):
 
     if self.use_bias:
       self.b = self.add_weight(shape = (self.num_outputs,),
-                            initializer = self.bias_initializer,
+                            initializer = tf.constant_initializer(0.),
                             trainable = True)      
     else:
       self.b = None
@@ -160,7 +152,7 @@ class VarDropout(Layer):
   def call(self, inputs, training = None):
     if training:
       val = matmul_train (
-        inputs, (self.theta, self.log_sigma2), clip_alpha = self.clip_alpha)
+        inputs, (self.theta, self.log_sigma2))
     else:
       val = matmul_eval (
         inputs, (self.theta, self.log_sigma2), threshold = self.threshold)
@@ -209,10 +201,6 @@ def matmul_eval(
       variational_params,
       threshold=3.0,
       eps=EPSILON):
-    # We expect a 2D input tensor, as is standard in fully-connected layers
-    assert(len(variational_params) == 2)
-    assert(variational_params[0].shape == variational_params[1].shape)
-
     theta, log_sigma2 = variational_params
 
     # Compute the weight mask by thresholding on
@@ -220,38 +208,23 @@ def matmul_eval(
     log_alpha = compute_log_alpha(variational_params, eps=eps, value_limit=None)
     weight_mask = tf.cast(tf.less(log_alpha, threshold), tf.float32)
 
-    return tf.matmul(
-        x,
-        theta * weight_mask)
+    return tf.matmul(x,theta * weight_mask)
 
 def matmul_train(
       x,
       variational_params,
       clip_alpha=None,
       eps=EPSILON):
-
-    # We expect a 2D input tensor, as in standard in fully-connected layers
-    assert(len(variational_params) == 2)
-    assert(variational_params[0].shape == variational_params[1].shape)
-    w, log_sigma2 = variational_params
-
-    if clip_alpha is not None:
-      # Compute the log_alphas and then compute the
-      # log_sigma2 again so that we can clip on the
-      # log alpha magnitudes
-      log_alpha = compute_log_alpha(variational_params, eps, clip_alpha)
-      log_sigma2 = compute_log_sigma2(variational_params, eps)
-
+    theta, log_sigma2 = variational_params
+    log_alpha = compute_log_alpha(variational_params, eps, clip_alpha)
+    
     # Compute the mean and standard deviation of the distributions over the
     # activations
-    mu = tf.matmul(x, w)
-    std = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_sigma2)) + eps)
+    mu = tf.matmul(x, theta)
+    std = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_alpha)*tf.square(theta)) + eps)
+    return mu + std * tf.random.normal(tf.shape(mu))
 
-    output_shape = tf.shape(std)
-    return mu + std * tf.random.normal(output_shape)
-
-def compute_log_sigma2(variational_params, eps=EPSILON):
-    log_alpha, theta = variational_params
+def compute_log_sigma2(theta,log_alpha, eps=EPSILON):
     return log_alpha + tf.math.log(tf.square(theta) + eps)
 
 def compute_log_alpha(variational_params, eps=EPSILON, value_limit=8.):
@@ -259,9 +232,8 @@ def compute_log_alpha(variational_params, eps=EPSILON, value_limit=8.):
   log_alpha = log_sigma2 - tf.math.log(tf.square(theta) + eps)
 
   if value_limit is not None:
-    # If a limit is specified, clip the alpha values
     return tf.clip_by_value(log_alpha, -value_limit, value_limit)
-  return log_alpha
+  return tf.identity(log_alpha)
 
 def negative_dkl(variational_params,
                  clip_alpha=3.,
@@ -274,8 +246,8 @@ def negative_dkl(variational_params,
 
   # Compute each term of the KL and combine
   term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.math.log1p(tf.exp(tf.negative(log_alpha)))
-  eltwise_dkl = term_1 + term_2 + c
+  term_2 = -0.5 * tf.math.log1p(tf.exp(-log_alpha))
+  eltwise_dkl = k1 * tf.nn.sigmoid(k2 + k3*log_alpha) -0.5 * tf.math.log1p(tf.exp(-log_alpha)) + c
   return -tf.reduce_sum(eltwise_dkl)
 
 def variational_dropout_dkl_loss(variational_params,
@@ -283,8 +255,9 @@ def variational_dropout_dkl_loss(variational_params,
                                  eps = EPSILON,
                                  clip_alpha = 3.,
                                  start_reg_ramp_up=0.,
-                                 end_reg_ramp_up=10000.,
-                                 warm_up=True):
+                                 end_reg_ramp_up=100.,
+                                 reg_scalar = 1,
+                                 warm_up=False):
 
   # Calculate the kl-divergence weight for this iteration
   
@@ -301,7 +274,6 @@ def variational_dropout_dkl_loss(variational_params,
   if warm_up:
     reg_scalar = fraction * 1
 
-  tf.summary.scalar('reg_scalar', reg_scalar)
   dkl_loss = reg_scalar * dkl_loss
 
   return dkl_loss
@@ -369,18 +341,11 @@ def create_model(
   # Define Inputs
   model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
   
-  xs = []
-  for i in range(num_labels):
-    #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
-    x = Dense(784)(model_input)
-    if dropout_type == 'var':
-      x = VarDropoutLeNetBlock()(x)
-    else:
-      x = DropoutLeNetBlock(rate = dropout_rate)(x)
-    xs.append(x)
-  
-  x = Concatenate()([xs[0],xs[1],xs[2],xs[3],xs[4],xs[5],xs[6],xs[7],xs[8],xs[9]])
-  x = Dense(100)(x)
+  #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
+  if dropout_type == 'var':
+    x = VarDropoutLeNetBlock()(model_input)
+  else:
+    x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
   model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
   
   # define model
@@ -564,6 +529,6 @@ if __name__ == '__main__':
   model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset
-  score = model.evaluate([x_test,y_test], y_test, batch_size=BATCH_SIZE)
+  score = model.evaluate(x_test, y_test, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
