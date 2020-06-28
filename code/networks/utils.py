@@ -13,6 +13,20 @@ from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import cifar10, mnist
 
 
+
+#######################################################
+# handy function to keep track of sparsity
+def sparseness(log_alphas, thresh=3):
+    N_active, N_total = 0., 0.
+    for la in log_alphas:
+        m = tf.cast(tf.less(la, thresh), tf.float32)
+        n_active = tf.reduce_sum(m)
+        n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
+        N_active += n_active
+        N_total += n_total
+    return 1.0 - N_active/N_total
+
+
 def parse_cmd(description = 'AE Embedding Classifier'):
   parser = argparse.ArgumentParser(description=description)
   parser.add_argument("-c", "--categorical",
