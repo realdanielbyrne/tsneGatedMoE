@@ -12,6 +12,7 @@ from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
 from tensorflow.python.eager import context
+import tensorflow_probability as tfp
 #from layers.vd import VarDropout, ConstantGausianDropout
 import utils
 
@@ -110,6 +111,7 @@ class VarDropout(Layer):
                eps=EPSILON,
                threshold=3.,
                clip_alpha=8.,
+               warmup = False,
                **kwargs):
     super(VarDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
@@ -120,7 +122,7 @@ class VarDropout(Layer):
     self.eps = eps
     self.threshold = threshold
     self.clip_alpha = clip_alpha
-    self.step = tf.Variable(0, trainable=False)
+    self.warmup = warmup
 
   def build(self, input_shape):
     if self.num_outputs is None:
@@ -133,8 +135,7 @@ class VarDropout(Layer):
                             trainable=True)
 
     if self.log_sigma2_initializer is None:
-      self.log_sigma2_initializer = tf.constant_initializer(value=-10)
-      #self.log_sigma2_initializer = tf.random_uniform_initializer()
+      self.log_sigma2_initializer = tf.random_uniform_initializer()
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
                             initializer=self.kernel_initializer,
@@ -146,34 +147,34 @@ class VarDropout(Layer):
                             trainable = True)      
     else:
       self.b = None
-
-
-
+    
   def call(self, inputs, training = None):
+
     if training:
-      val = matmul_train (
-        inputs, (self.theta, self.log_sigma2))
+      val = matmul_train (inputs, (self.theta, self.log_sigma2))
     else:
-      val = matmul_eval (
-        inputs, (self.theta, self.log_sigma2), threshold = self.threshold)
+      val = matmul_eval (inputs, (self.theta, self.log_sigma2), threshold = self.threshold)
 
     if self.use_bias:
       val = tf.nn.bias_add(val, self.b)
     
     if self.activation is not None:
       val = self.activation(val)
-    
-    loss = variational_dropout_dkl_loss([ self.theta, self.log_sigma2 ], self.step,
-                                        self.eps,
-                                        self.clip_alpha)
-    self.add_loss(loss)
+
+    #compute element-wise dkl
+    log_alpha = compute_log_alpha((self.theta, self.log_sigma2), self.eps, self.clip_alpha)
+    k1, k2, k3 = 0.63576, 1.8732, 1.48695
+    c = -0.63576
+    eltwise_dkl = k1 * tf.nn.sigmoid(k2 + k3*log_alpha) -0.5 * tf.math.log1p(tf.exp(-log_alpha)) + c
+
+    dkl_loss = -tf.reduce_sum(eltwise_dkl)
+    self.add_loss(dkl_loss, inputs=True)
 
     if not context.executing_eagerly():
       # Set the static shape for the result since it might be lost during array_ops
       # reshape, eg, some `None` dim in the result could be inferred.
       val.set_shape(self.compute_output_shape(inputs.shape))
 
-    self.step.assign_add(1)
     return val
 
   def compute_output_shape(self, input_shape):
@@ -184,14 +185,12 @@ class VarDropout(Layer):
         'num_outputs' : self.num_outputs,
         'activation' : self.activation,
         'kernel_initializer' : self.kernel_initializer,
-        'bias_initializer' : self.bias_initializer,
-        'kernel_regularizer' : self.kernel_regularizer,
-        'bias_regularizer' : self.bias_regularizer,
         'log_sigma2_initializer' : self.log_sigma2_initializer,
         'use_bias' : self.use_bias,
         'eps' : self.eps,
         'threshold' : self.threshold,
-        'clip_alpha' : self.clip_alpha
+        'clip_alpha' : self.clip_alpha,
+        'warmup':self.warmup
     }
     base_config = super(VarDropout, self).get_config()
     return dict(list(base_config.items()) + list(config.items()))
@@ -235,60 +234,30 @@ def compute_log_alpha(variational_params, eps=EPSILON, value_limit=8.):
     return tf.clip_by_value(log_alpha, -value_limit, value_limit)
   return tf.identity(log_alpha)
 
-def negative_dkl(variational_params,
-                 clip_alpha=3.,
-                 eps=EPSILON):
-  log_alpha = compute_log_alpha(variational_params, eps, clip_alpha)
+def get_scaler( step,
+            start_reg_ramp_up=0.,
+            end_reg_ramp_up=100.,
+            reg_scalar = 1):
 
-  # Constant values for approximating the kl divergence
-  k1, k2, k3 = 0.63576, 1.8732, 1.48695
-  c = -k1
-
-  # Compute each term of the KL and combine
-  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.math.log1p(tf.exp(-log_alpha))
-  eltwise_dkl = k1 * tf.nn.sigmoid(k2 + k3*log_alpha) -0.5 * tf.math.log1p(tf.exp(-log_alpha)) + c
-  return -tf.reduce_sum(eltwise_dkl)
-
-def variational_dropout_dkl_loss(variational_params,
-                                 step,
-                                 eps = EPSILON,
-                                 clip_alpha = 3.,
-                                 start_reg_ramp_up=0.,
-                                 end_reg_ramp_up=100.,
-                                 reg_scalar = 1,
-                                 warm_up=False):
-
-  # Calculate the kl-divergence weight for this iteration
-  
   current_step_reg = tf.cast(tf.cast(step,tf.float32) - start_reg_ramp_up, tf.float32)
   current_step_reg = tf.maximum(0.0, current_step_reg)
 
   fraction_ramp_up_completed = tf.minimum(
       current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
-
   fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
-
-  dkl_loss = negative_dkl(variational_params)
-
-  if warm_up:
-    reg_scalar = fraction * 1
-
-  dkl_loss = reg_scalar * dkl_loss
-
-  return dkl_loss
-
+  
+  return fraction * reg_scalar
 
 class VarDropoutLeNetBlock(Layer):
     def __init__(self, activation = tf.keras.activations.relu):
         super(VarDropoutLeNetBlock, self).__init__()
         self.activation = activation
         self.dense_1 = Dense(300, activation = activation)
-        self.var_dropout_1 = VarDropout()
+        self.var_dropout_1 = VarDropout(name='var_dropout1')
         self.dense_2 = Dense(100, activation = activation)
-        self.var_dropout_2 = VarDropout()
+        self.var_dropout_2 = VarDropout(name='var_dropout2')
         self.dense_3 = Dense(100, activation = activation)
-        self.var_dropout_3 = VarDropout()
+        self.var_dropout_3 = VarDropout(name='var_dropout3')
 
     def call(self, inputs):
         x = self.dense_1(inputs)
@@ -346,7 +315,7 @@ def create_model(
     x = VarDropoutLeNetBlock()(model_input)
   else:
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
-  model_out = Dense(num_labels, activation = 'softmax', name='model_out')(x)
+  model_out = Dense(num_labels, activation="softmax",name='model_out')(x)
   
   # define model
   model = Model(model_input, model_out, name = model_name)
@@ -354,15 +323,60 @@ def create_model(
   
   return model
 
-def custom_train(model,x_train, y_train, loss_fn):
+def custom_train(model, x_train, y_train):
+  # Keep results for plotting
+  train_loss_results = []
+  train_accuracy_results = []
+
+  # Instantiate a loss
+  loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+
   # Instantiate an optimizer.
   optimizer = keras.optimizers.Adam()
+  epoch_loss_avg = tf.keras.metrics.Mean()
+  epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
+  val_accuracy = tf.keras.metrics.CategoricalAccuracy()
 
   # prepare data  
   train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
   train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
-  loss_metric = tf.keras.metrics.Mean()
 
+  # Prepare the validation dataset.
+  # Reserve 5,000 samples for validation.
+  x_val = x_train[-5000:]
+  y_val = y_train[-5000:]
+  x_train = x_train[:-5000]
+  y_train = y_train[:-5000]
+  val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+  val_dataset = val_dataset.batch(BATCH_SIZE)
+
+  @tf.function
+  def train_step(x, y):
+    with tf.GradientTape() as tape:
+      logits = model(x_batch_train, training=True)  # Logits for this minibatch
+
+      # Compute the loss value for this minibatch.
+      loss_value = loss_fn(y_batch_train, logits)
+
+      # Add kld layer losses created during this forward pass:
+      kld_losses =  sum(model.losses) 
+      kld_losses = kld_losses / float(x_train.shape[0])
+      loss_value += kld_losses
+
+      # Retrievethe gradients of the trainable variables with respect to the loss.
+      grads = tape.gradient(loss_value, model.trainable_weights)
+      # Minimize the loss.
+      optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+      # Update training metrics
+      epoch_loss_avg.update_state(loss_value) 
+      epoch_accuracy.update_state(y_batch_train,logits)
+    return loss_value
+
+  @tf.function
+  def test_step(x, y):
+      val_logits = model(x, training=False)
+      val_accuracy.update_state(y, val_logits)
 
   for epoch in range(EPOCHS):
     print("\nStart of epoch %d" % (epoch,))
@@ -370,39 +384,32 @@ def custom_train(model,x_train, y_train, loss_fn):
     # Iterate over the batches of the dataset.
     for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
 
-        # Open a GradientTape to record the operations run
-        # during the forward pass, which enables autodifferentiation.
-        with tf.GradientTape() as tape:
+      # Run the forward pass.
+      loss_value = train_step(x_batch_train, y_batch_train)
 
-            # Run the forward pass of the layer.
-            # The operations that the layer applies
-            # to its inputs are going to be recorded
-            # on the GradientTape.
-            logits = model(x_batch_train, training=True)  # Logits for this minibatch
+      # Log every 200 batches.
+      if step % 200 == 0:
+        print(
+          "Training loss (for one batch) at step %d: %.4f"
+            % (step, float(loss_value))
+        )
+      
+    # Display metrics at the end of each epoch.
+    print("Training acc over epoch: %.4f" % (float(epoch_accuracy.result()),))
+    print("Training loss over epoch: %.4f" % (float(epoch_loss_avg.result()),))
 
-            # Compute the loss value for this minibatch.
-            loss_value = loss_fn(y_batch_train, logits)
+    # Reset training metrics at the end of each epoch
+    epoch_accuracy.reset_states()      
+    epoch_loss_avg.reset_states()
 
-            # Add kld layer losses created during this forward pass:
-            loss_value += sum(model.losses)
+    # Run a validation loop at the end of each epoch.
+    for x_batch_val, y_batch_val in val_dataset:
+        test_step(x_batch_val, y_batch_val)
 
-        # Use the gradient tape to automatically retrieve
-        # the gradients of the trainable variables with respect to the loss.
-        grads = tape.gradient(loss_value, model.trainable_weights)
-
-        # Run one step of gradient descent by updating
-        # the value of the variables to minimize the loss.
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
-        loss_metric(loss_value)
-
-        # Log every 200 batches.
-        if step % 200 == 0:
-            print(
-                "Training loss (for one batch) at step %d: %.4f"
-                % (step, float(loss_value))
-            )
-            print("Seen so far: %s samples" % ((step + 1) * BATCH_SIZE))
+    val_acc = val_accuracy.result()
+    val_accuracy.reset_states()
+    print("Validation acc: %.4f" % (float(val_acc),))
+    
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
   initial_thetas = []
@@ -435,15 +442,15 @@ def get_varparams_class_means(predictions, y_test, num_labels):
 DIMENSION = 784
 EPOCHS = 10
 intermediate_dim = 512
-BATCH_SIZE = 64
+BATCH_SIZE = 100
 latent_dim = 2
-vae_epochs = 2
+vae_epochs = 1
 
 if __name__ == '__main__':
 
   parser = argparse.ArgumentParser(description='Control MLP Classifier')
   parser.add_argument("-c", "--categorical",
-                      default=False,
+                      default=True,
                       help="Convert class vectors to binary class matrices ( One Hot Encoding ).")
   parser.add_argument("-s", "--embedding_type",
                       default='mean',
@@ -466,7 +473,7 @@ if __name__ == '__main__':
                                                   verbose=1)
 
   # load data
-  (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=False)
+  (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=True)
   input_dim = output_dim = x_train.shape[-1]
   
   # Define encoder model.
@@ -492,7 +499,8 @@ if __name__ == '__main__':
 
   # Add KL divergence regularization loss.
   kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
-  vae.add_loss(kl_loss)
+  kl_loss_i = tf.identity(kl_loss)
+  vae.add_loss(kl_loss_i)
 
   # Train
   optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
@@ -513,20 +521,16 @@ if __name__ == '__main__':
   # create model under test
   model = create_model(x_train, initial_values, num_labels, encoder, model_name)
   
-  # Define First term of ELBO Loss 
-  # kl loss is collected at each layer
-  if args.categorical:
-    loss_fn = keras.losses.CategoricalCrossentropy(from_logits = False)
-  else:
-    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits = False)
+  loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
+  metric = [keras.metrics.CategoricalAccuracy(),keras.metrics.Mean() ]
   
   # Train
   # use custom training loop to assist in debugging
-  #custom_train(model, x_train, y_train, loss_fn)
+  custom_train(model, x_train, y_train)
   
   # use graph training for speed
-  model.compile('adam',loss = loss_fn, metrics=[keras.metrics.SparseCategoricalAccuracy()])
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
+  model.compile('adam',loss = loss_fn, metrics=[metric])
+  #model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
 
   # model accuracy on test dataset
   score = model.evaluate(x_test, y_test, batch_size=BATCH_SIZE)

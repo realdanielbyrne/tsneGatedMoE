@@ -62,7 +62,7 @@ def load_minst_data(categorical):
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train)
-    y_test_cat = to_categorical(y_test)
+    y_test = to_categorical(y_test)
 
   return (x_train, y_train), (x_test, y_test), num_labels
 
@@ -81,6 +81,7 @@ def load_cifar10_data(categorical):
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train, 10)
+    y_test = to_categorical(y_test, 10)
 
   return (x_train, y_train), (x_test, y_test), num_labels
 
@@ -111,12 +112,3 @@ def plot_encoding(encoder,
     plt.ylabel("z[1]")
     plt.savefig(filename)
     plt.show()
-
-def standardize_data_format(data_format):
-  if data_format == "channels_last":
-    data_format = "NHWC"
-  elif data_format == "channels_first":
-    data_format = "NCHW"
-  else:
-    data_format = data_format
-  return data_format
