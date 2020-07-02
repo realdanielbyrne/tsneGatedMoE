@@ -104,7 +104,7 @@ class ConstantGausianDropoutGate(Layer):
 class VarDropout(Layer):
   def __init__(self,
                num_outputs = None,
-               activation = tf.keras.activations.relu,
+               activation = None,
                kernel_initializer = tf.keras.initializers.RandomNormal,
                kernel_regularizer = tf.keras.regularizers.l2(.001),
                log_sigma2_initializer = None,
@@ -313,11 +313,11 @@ def create_model(
   #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
   if dropout_type == 'var':
         x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
-        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = VarDropout()(x)
         x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
-        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = VarDropout()(x)
         x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
-        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = VarDropout()(x)
   else:
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
   model_out = Dense(num_labels,name='model_out')(x)
@@ -443,12 +443,6 @@ def get_varparams_class_means(predictions, y_test, num_labels):
   return initial_values
 
 
-def loss(target_y, predicted_y):
-  loss_fn = tf.keras.losses.categorical_crossentropy(from_logits=True)
-  loss = loss_fn(target_y,predicted_y)
-
-  return tf.reduce_mean(tf.square(target_y - predicted_y))
-
 # Settings
 DIMENSION = 784
 EPOCHS = 100
@@ -561,6 +555,6 @@ if __name__ == '__main__':
   vae.add_loss(kl_loss_i)
 
   #model accuracy on test dataset
-  score = model.evaluate(x = x_test, y = y_test, batch_size=BATCH_SIZE)
+  score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
