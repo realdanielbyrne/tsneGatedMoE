@@ -12,7 +12,7 @@ from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
 from tensorflow.python.eager import context
-import tensorflow_probability as tfp
+import tensorflow_model_optimization as tfmot
 #from layers.vd import VarDropout, ConstantGausianDropout
 import utils
 
@@ -106,23 +106,28 @@ class VarDropout(Layer):
                num_outputs = None,
                activation = tf.keras.activations.relu,
                kernel_initializer = tf.keras.initializers.RandomNormal,
+               kernel_regularizer = tf.keras.regularizers.l2(.001),
                log_sigma2_initializer = None,
-               use_bias=True,
+               use_bias=False,
                eps=EPSILON,
                threshold=3.,
                clip_alpha=8.,
-               warmup = False,
+               warmup = True,
+               max_step = 10000,
                **kwargs):
     super(VarDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
     self.activation = activation
     self.kernel_initializer = kernel_initializer
+    self.kernel_regularizer = kernel_regularizer
     self.log_sigma2_initializer = log_sigma2_initializer
     self.use_bias = use_bias
     self.eps = eps
     self.threshold = threshold
     self.clip_alpha = clip_alpha
     self.warmup = warmup
+    self.step = tf.Variable(initial_value=1., trainable=False)
+    self.max_step = max_step
 
   def build(self, input_shape):
     if self.num_outputs is None:
@@ -139,21 +144,54 @@ class VarDropout(Layer):
 
     self.log_sigma2 = self.add_weight(shape = kernel_shape,
                             initializer=self.kernel_initializer,
+                            regularizer=self.kernel_regularizer,
                             trainable=True)
 
     if self.use_bias:
       self.b = self.add_weight(shape = (self.num_outputs,),
                             initializer = tf.constant_initializer(0.),
-                            trainable = True)      
+                            trainable = True)
     else:
       self.b = None
+
     
   def call(self, inputs, training = None):
 
     if training:
-      val = matmul_train (inputs, (self.theta, self.log_sigma2))
+      if self.clip_alpha is not None:
+        # Compute the log_alphas and then compute the
+        # log_sigma2 again so that we can clip on the
+        # log alpha magnitudes
+        log_alpha = compute_log_alpha(self.log_sigma2, self.theta)
+        if self.clip_alpha is not None:
+          # If a limit is specified, clip the alpha values
+          log_alpha = tf.clip_by_value(log_alpha, -self.clip_alpha, self.clip_alpha)  
+        log_sigma2 = compute_log_sigma2(self.theta, log_alpha)
+      
+      # Compute the mean and standard deviation of the distributions over the
+      # activations
+      mu = tf.matmul(inputs,self.theta)
+      std = tf.sqrt(tf.matmul(tf.square(inputs),tf.exp(self.log_sigma2)) + self.eps)
+      val = tf.random.normal(tf.shape(std),mu,std)
+      
+      # Constants
+      k1, k2, k3, c = 0.63576, 1.8732, 1.48695, -0.63576
+
+      # Compute element-wise dkl
+      eltwise_dkl = k1 * tf.nn.sigmoid(k2 + k3 * log_alpha) -0.5 * tf.math.log1p(tf.exp(-log_alpha)) + c
+      dkl_loss = -tf.reduce_sum(eltwise_dkl) / 57000. # good for 60,000 training examples minu
+
+      if self.warmup:
+        self.step.assign_add(1.)
+        fraction = tf.minimum(self.step / (self.max_step), 1.0)
+        dkl_loss *= fraction
+
     else:
-      val = matmul_eval (inputs, (self.theta, self.log_sigma2), threshold = self.threshold)
+      #def compute_log_alpha(theta, log_sigma2):
+      log_alpha = compute_log_alpha(self.theta, self.log_sigma2)
+      weight_mask = tf.cast(tf.less(log_alpha, self.threshold), tf.float32)
+      val = tf.matmul(inputs, self.theta * weight_mask)
+      dkl_loss = 0.
 
     if self.use_bias:
       val = tf.nn.bias_add(val, self.b)
@@ -161,13 +199,6 @@ class VarDropout(Layer):
     if self.activation is not None:
       val = self.activation(val)
 
-    #compute element-wise dkl
-    log_alpha = compute_log_alpha((self.theta, self.log_sigma2), self.eps, self.clip_alpha)
-    k1, k2, k3 = 0.63576, 1.8732, 1.48695
-    c = -0.63576
-    eltwise_dkl = k1 * tf.nn.sigmoid(k2 + k3*log_alpha) -0.5 * tf.math.log1p(tf.exp(-log_alpha)) + c
-
-    dkl_loss = -tf.reduce_sum(eltwise_dkl)
     self.add_loss(dkl_loss, inputs=True)
 
     if not context.executing_eagerly():
@@ -176,7 +207,7 @@ class VarDropout(Layer):
       val.set_shape(self.compute_output_shape(inputs.shape))
 
     return val
-
+  
   def compute_output_shape(self, input_shape):
     return input_shape
 
@@ -195,69 +226,25 @@ class VarDropout(Layer):
     base_config = super(VarDropout, self).get_config()
     return dict(list(base_config.items()) + list(config.items()))
 
-def matmul_eval(
-      x,
-      variational_params,
-      threshold=3.0,
-      eps=EPSILON):
-    theta, log_sigma2 = variational_params
+@tf.function
+def compute_log_sigma2(theta, log_alpha):
+    return log_alpha + tf.math.log(tf.square(theta) + 1e-8)
 
-    # Compute the weight mask by thresholding on
-    # the log-space alpha values
-    log_alpha = compute_log_alpha(variational_params, eps=eps, value_limit=None)
-    weight_mask = tf.cast(tf.less(log_alpha, threshold), tf.float32)
+@tf.function
+def compute_log_alpha(theta, log_sigma2):
+  return log_sigma2 - tf.math.log(tf.square(theta) + 1e-8)
 
-    return tf.matmul(x,theta * weight_mask)
-
-def matmul_train(
-      x,
-      variational_params,
-      clip_alpha=None,
-      eps=EPSILON):
-    theta, log_sigma2 = variational_params
-    log_alpha = compute_log_alpha(variational_params, eps, clip_alpha)
-    
-    # Compute the mean and standard deviation of the distributions over the
-    # activations
-    mu = tf.matmul(x, theta)
-    std = tf.sqrt(tf.matmul(tf.square(x),tf.exp(log_alpha)*tf.square(theta)) + eps)
-    return mu + std * tf.random.normal(tf.shape(mu))
-
-def compute_log_sigma2(theta,log_alpha, eps=EPSILON):
-    return log_alpha + tf.math.log(tf.square(theta) + eps)
-
-def compute_log_alpha(variational_params, eps=EPSILON, value_limit=8.):
-  theta, log_sigma2 = variational_params
-  log_alpha = log_sigma2 - tf.math.log(tf.square(theta) + eps)
-
-  if value_limit is not None:
-    return tf.clip_by_value(log_alpha, -value_limit, value_limit)
-  return tf.identity(log_alpha)
-
-def get_scaler( step,
-            start_reg_ramp_up=0.,
-            end_reg_ramp_up=100.,
-            reg_scalar = 1):
-
-  current_step_reg = tf.cast(tf.cast(step,tf.float32) - start_reg_ramp_up, tf.float32)
-  current_step_reg = tf.maximum(0.0, current_step_reg)
-
-  fraction_ramp_up_completed = tf.minimum(
-      current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
-  fraction = tf.minimum(current_step_reg / (end_reg_ramp_up - start_reg_ramp_up), 1.0)
-  
-  return fraction * reg_scalar
 
 class VarDropoutLeNetBlock(Layer):
     def __init__(self, activation = tf.keras.activations.relu):
         super(VarDropoutLeNetBlock, self).__init__()
         self.activation = activation
-        self.dense_1 = Dense(300, activation = activation)
-        self.var_dropout_1 = VarDropout(name='var_dropout1')
-        self.dense_2 = Dense(100, activation = activation)
-        self.var_dropout_2 = VarDropout(name='var_dropout2')
-        self.dense_3 = Dense(100, activation = activation)
-        self.var_dropout_3 = VarDropout(name='var_dropout3')
+        self.dense_1 = Dense(300, activation = activation, kernel_regularizer=tf.keras.regularizers.l2(1e-3))
+        self.var_dropout_1 = VarDropout(name='var_dropout1',activation = activation,kernel_regularizer=tf.keras.regularizers.l2(1e-3))
+        self.dense_2 = Dense(100, activation = activation, kernel_regularizer=tf.keras.regularizers.l2(1e-3))
+        self.var_dropout_2 = VarDropout(name='var_dropout2',activation = activation,kernel_regularizer=tf.keras.regularizers.l2(1e-3))
+        self.dense_3 = Dense(100, activation = activation, kernel_regularizer=tf.keras.regularizers.l2(1e-3))
+        self.var_dropout_3 = VarDropout(name='var_dropout3',activation = activation,kernel_regularizer=tf.keras.regularizers.l2(1e-3))
 
     def call(self, inputs):
         x = self.dense_1(inputs)
@@ -267,6 +254,19 @@ class VarDropoutLeNetBlock(Layer):
         x = self.dense_3(x)
         x = self.var_dropout_3(x)
         return x
+
+    def get_config(self):
+      config = {
+        'dense_1' : self.dense_1,
+        'var_dropout1' : self.var_dropout_1,
+        'dense_2' : self.dense_2,
+        'var_dropout2' : self.var_dropout_2,
+        'dense_3' : self.dense_3,
+        'var_dropout3' : self.var_dropout_3,
+        'activation':self.activation
+      }
+      base_config = super(VarDropout, self).get_config()
+      return dict(list(base_config.items()) + list(config.items()))
 
 class DropoutLeNetBlock(Layer):
     def __init__(self, activation = tf.keras.activations.relu, rate = .2):
@@ -312,10 +312,15 @@ def create_model(
   
   #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
   if dropout_type == 'var':
-    x = VarDropoutLeNetBlock()(model_input)
+        x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
+        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+        x = VarDropout(kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
   else:
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
-  model_out = Dense(num_labels, activation="softmax",name='model_out')(x)
+  model_out = Dense(num_labels,name='model_out')(x)
   
   # define model
   model = Model(model_input, model_out, name = model_name)
@@ -323,23 +328,20 @@ def create_model(
   
   return model
 
-def custom_train(model, x_train, y_train):
+def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
   # Keep results for plotting
   train_loss_results = []
   train_accuracy_results = []
 
   # Instantiate a loss
-  loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+  loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True,reduction=tf.keras.losses.Reduction.AUTO)
 
   # Instantiate an optimizer.
-  optimizer = keras.optimizers.Adam()
   epoch_loss_avg = tf.keras.metrics.Mean()
   epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
   val_accuracy = tf.keras.metrics.CategoricalAccuracy()
 
-  # prepare data  
-  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
+
 
   # Prepare the validation dataset.
   # Reserve 5,000 samples for validation.
@@ -349,6 +351,10 @@ def custom_train(model, x_train, y_train):
   y_train = y_train[:-5000]
   val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
   val_dataset = val_dataset.batch(BATCH_SIZE)
+
+  # prepare data  
+  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
 
   @tf.function
   def train_step(x, y):
@@ -360,7 +366,7 @@ def custom_train(model, x_train, y_train):
 
       # Add kld layer losses created during this forward pass:
       kld_losses =  sum(model.losses) 
-      kld_losses = kld_losses / float(x_train.shape[0])
+      kld_losses = kld_losses #/ float(x_train.shape[0])
       loss_value += kld_losses
 
       # Retrievethe gradients of the trainable variables with respect to the loss.
@@ -387,13 +393,6 @@ def custom_train(model, x_train, y_train):
       # Run the forward pass.
       loss_value = train_step(x_batch_train, y_batch_train)
 
-      # Log every 200 batches.
-      if step % 200 == 0:
-        print(
-          "Training loss (for one batch) at step %d: %.4f"
-            % (step, float(loss_value))
-        )
-      
     # Display metrics at the end of each epoch.
     print("Training acc over epoch: %.4f" % (float(epoch_accuracy.result()),))
     print("Training loss over epoch: %.4f" % (float(epoch_loss_avg.result()),))
@@ -409,6 +408,12 @@ def custom_train(model, x_train, y_train):
     val_acc = val_accuracy.result()
     val_accuracy.reset_states()
     print("Validation acc: %.4f" % (float(val_acc),))
+  
+
+  test_step(x_test, y_test)
+  val_acc = val_accuracy.result()
+  val_accuracy.reset_states()
+  print("Test acc: %.4f" % (float(val_acc),))
     
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
@@ -438,9 +443,15 @@ def get_varparams_class_means(predictions, y_test, num_labels):
   return initial_values
 
 
+def loss(target_y, predicted_y):
+  loss_fn = tf.keras.losses.categorical_crossentropy(from_logits=True)
+  loss = loss_fn(target_y,predicted_y)
+
+  return tf.reduce_mean(tf.square(target_y - predicted_y))
+
 # Settings
 DIMENSION = 784
-EPOCHS = 10
+EPOCHS = 100
 intermediate_dim = 512
 BATCH_SIZE = 100
 latent_dim = 2
@@ -463,7 +474,9 @@ if __name__ == '__main__':
   model_name = 'mlp_cgvd.h5'
   save_dir = os.path.join(os.getcwd(), 'saved_models')
   log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-  tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+  tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+  sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch')
+
 
   # Create a callback that saves the model's weights
   checkpoint_path = "training\\cp.ckpt"
@@ -473,7 +486,7 @@ if __name__ == '__main__':
                                                   verbose=1)
 
   # load data
-  (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=True)
+  (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(categorical=True)
   input_dim = output_dim = x_train.shape[-1]
   
   # Define encoder model.
@@ -522,17 +535,32 @@ if __name__ == '__main__':
   model = create_model(x_train, initial_values, num_labels, encoder, model_name)
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
-  metric = [keras.metrics.CategoricalAccuracy(),keras.metrics.Mean() ]
+  metrics = [keras.metrics.CategoricalAccuracy()]
+
   
+  STEPS_PER_EPOCH = x_train.shape[0]//BATCH_SIZE
+  lr_schedule = tf.keras.optimizers.schedules.InverseTimeDecay(
+    0.001,
+    decay_steps=STEPS_PER_EPOCH*1000,
+    decay_rate=1,
+    staircase=False)
+
+  tf.keras.optimizers.Adam(lr_schedule)
+
   # Train
   # use custom training loop to assist in debugging
-  custom_train(model, x_train, y_train)
+  #custom_train(model, x_train, y_train, optimizer, x_test, y_test)
   
   # use graph training for speed
-  model.compile('adam',loss = loss_fn, metrics=[metric])
-  #model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_callback])
+  model.compile(optimizer,loss = loss_fn, metrics=['accuracy'])
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[sparsity_cb], validation_split=.05)
 
-  # model accuracy on test dataset
-  score = model.evaluate(x_test, y_test, batch_size=BATCH_SIZE)
+  # Add KL divergence regularization loss.
+  kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
+  kl_loss_i = tf.identity(kl_loss)
+  vae.add_loss(kl_loss_i)
+
+  #model accuracy on test dataset
+  score = model.evaluate(x = x_test, y = y_test, batch_size=BATCH_SIZE)
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))

@@ -17,7 +17,7 @@ import utils
 
 # Settings
 DIMENSION = 784
-EPOCHS = 10
+EPOCHS = 20
 intermediate_dim = 512
 BATCH_SIZE = 100
 latent_dim = 2
@@ -27,10 +27,8 @@ import tensorflow_probability as tfp
 
 
 
-def custom_train(model, x_train, y_train):
+def custom_train(model, x_train, y_train, x_test, y_test):
 
-
-  
   # Keep results for plotting
   train_loss_results = []
   train_accuracy_results = []
@@ -39,14 +37,20 @@ def custom_train(model, x_train, y_train):
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
 
   # Instantiate an optimizer.
-  optimizer = keras.optimizers.Adam()
+  STEPS_PER_EPOCH = x_train.shape[0]//BATCH_SIZE
+  lr_schedule = tf.keras.optimizers.schedules.InverseTimeDecay(
+    0.001,
+    decay_steps=STEPS_PER_EPOCH*1000,
+    decay_rate=1,
+    staircase=False)
+
+  optimizer =tf.keras.optimizers.Adam(lr_schedule)
   epoch_loss_avg = tf.keras.metrics.Mean()
   epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
   val_accuracy = tf.keras.metrics.CategoricalAccuracy()
 
   # prepare data  
-  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
+
 
   # Prepare the validation dataset.
   # Reserve 5,000 samples for validation.
@@ -56,6 +60,9 @@ def custom_train(model, x_train, y_train):
   y_train = y_train[:-5000]
   val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
   val_dataset = val_dataset.batch(BATCH_SIZE)
+
+  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
 
   @tf.function
   def train_step(x, y):
@@ -94,12 +101,6 @@ def custom_train(model, x_train, y_train):
       # Run the forward pass.
       loss_value = train_step(x_batch_train, y_batch_train)
 
-      # Log every 200 batches.
-      if step % 200 == 0:
-        print(
-          "Training loss (for one batch) at step %d: %.4f"
-            % (step, float(loss_value))
-        )
       
     # Display metrics at the end of each epoch.
     print("Training acc over epoch: %.4f" % (float(epoch_accuracy.result()),))
@@ -116,6 +117,14 @@ def custom_train(model, x_train, y_train):
     val_acc = val_accuracy.result()
     val_accuracy.reset_states()
     print("Validation acc: %.4f" % (float(val_acc),))
+
+  # Run a validation loop at the end of each epoch.
+    
+  test_step(x_test, y_test)
+
+  val_acc = val_accuracy.result()
+  val_accuracy.reset_states()
+  print("Test acc: %.4f" % (float(val_acc),))
     
 
 if __name__ == '__main__':
@@ -145,13 +154,14 @@ if __name__ == '__main__':
                                                   verbose=1)
 
   # load data
-  (x_train, y_train), (x_test, y_test),num_labels = utils.load_minst_data(categorical=True)
+  (x_train, y_train), (x_test, y_test),num_labels, _ = utils.load_minst_data(categorical=True)
   input_dim = output_dim = x_train.shape[-1]
 
   model = tf.keras.Sequential([
-      tfp.layers.DenseLocalReparameterization(300, activation=tf.nn.relu),
-      tfp.layers.DenseLocalReparameterization(100, activation=tf.nn.relu),
-      tfp.layers.DenseLocalReparameterization(100, activation=tf.nn.relu),
+      tfp.layers.DenseLocalReparameterization(300, activation=tf.nn.relu,activity_regularizer=tf.keras.regularizers.L1L2(.01,.01)),
+      tfp.layers.DenseLocalReparameterization(100, activation=tf.nn.relu,activity_regularizer=tf.keras.regularizers.L1L2(.01,.01)),
+      tfp.layers.DenseLocalReparameterization(100, activation=tf.nn.relu,activity_regularizer=tf.keras.regularizers.L1L2(.01,.01)),
+      tf.keras.layers.Dropout(.4),
       tf.keras.layers.Dense(10),
   ])
 
@@ -159,7 +169,7 @@ if __name__ == '__main__':
 
   
   # use custom training loop to assist in debugging
-  custom_train(model, x_train, y_train)
+  custom_train(model, x_train, y_train, x_test,y_test)
 
   metric_fn = tf.keras.metrics.CategoricalAccuracy
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
