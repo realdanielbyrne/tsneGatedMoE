@@ -25,60 +25,51 @@ EPSILON = 1e-8
 class ConstantGausianDropoutGate(Layer):
   def __init__( self,
                 initial_values,
-                activation = tf.keras.activations.relu,
-                use_bias = True,
-                threshold=3.,
-                clip_alpha=None,
-                eps=EPSILON,
-                value_limit = 8.,
+                num_outputs = None,
+                activation = None,
+                use_bias=False,
+                zero_point = 1e-2,
                 **kwargs):
 
     super(ConstantGausianDropoutGate, self).__init__(**kwargs)
+    self.num_outputs = num_outputs
     self.activation = activation
     self.use_bias = use_bias
-    self.threshold = threshold
-    self.clip_alpha = clip_alpha
-    self.eps = eps
-    self.value_limit = value_limit
+    self.zero_point = zero_point
 
     # unpack variational parameters, and extrapolate the number of classes for the lookup  
     initial_theta, initial_log_sigma2 = initial_values
 
     # define static lookups for pre-calculated datasets
-    self.theta = initial_theta
-    self.log_sigma2 = initial_log_sigma2
+    self.initial_theta = initial_theta
+    self.initial_log_sigma2 = initial_log_sigma2
+
+  def build(self, input_shape):
+    if self.num_outputs is None:
+      self.num_outputs = input_shape[-1]
+
+    kernel_shape = (input_shape[-1],self.num_outputs)
+
+    self.kernel = self.add_weight(shape = kernel_shape,
+                            initializer=tf.nn.softmax_cross_entropy_with_logits(tf.keras.initializers.RandomNormal(self.initial_theta,self.initial_log_sigma2)),
+                            trainable=False)
+    if self.use_bias:
+      self.b = self.add_weight(shape = (self.num_outputs,),
+                            initializer = tf.keras.initializers.constant_initializer(self.initial_theta),
+                            trainable = True)
+    else:
+      self.b = None
 
   def call(self, inputs, training = None):
-    num_outputs = tf.shape(inputs)[-1]
-    noise_shape = [tf.shape(inputs)[-1], num_outputs]
-    theta = self.theta
-    log_sigma2 = self.log_sigma2
-    
-    # repack parameters for convience 
-    variational_params = (theta, log_sigma2)
+    val = tf.matmul(inputs,self.kernel)     
 
-    # compute dropout rate
-    log_alpha = compute_log_alpha(variational_params) 
-
-    # Compute log_sigma2 again so that we can clip on the log alpha magnitudes
-    if self.clip_alpha is not None:
-      log_sigma2 = compute_log_sigma2(log_alpha, theta)
-
-    if training:
-      mu = inputs * theta
-      std = tf.sqrt(tf.square(inputs) * tf.exp(log_sigma2) + EPSILON)
-      val = mu + tf.matmul(std, tf.random.normal(noise_shape))        
-
-    else:
-      log_alpha = compute_log_alpha(variational_params) 
-      threshold = self.threshold
-      weight_mask = tf.cast(tf.less(log_alpha, threshold), tf.float32)
-      val = inputs * theta * weight_mask  
-
-    # Apply an activation function to the output
     if self.activation is not None:
       val = self.activation(val)
-     
+    
+    # # push values that are close to zero, to zero, promotes sparse models which are more efficient
+    # condition = tf.less(val,self.zero_point)
+    # val = tf.where(condition,tf.zeros_like(val),val)
+
     if not context.executing_eagerly():
       # Set the static shape for the result since it might lost during array_ops
       # reshape, eg, some `None` dim in the result could be inferred.
@@ -87,19 +78,8 @@ class ConstantGausianDropoutGate(Layer):
     return val
       
   def compute_output_shape(self, input_shape):
-    return  input_shape
+    return  (input_shape[0],self.num_outputs)
   
-  def get_config(self):
-    config = {
-      'activation':self.activation,
-      'use_bias':self.use_bias,
-      'threshold':self.threshold, 
-      'clip_alpha':self.clip_alpha, 
-      'eps':self.eps,
-      'value_limit':self.value_limit 
-    }
-    base_config = super(VarDropout, self).get_config()
-    return dict(list(base_config.items()) + list(config.items()))
 
 class VarDropout(Layer):
   def __init__(self,
@@ -209,7 +189,7 @@ class VarDropout(Layer):
     return val
   
   def compute_output_shape(self, input_shape):
-    return input_shape
+    return (input_shape[0],self.num_outputs)
 
   def get_config(self):
     config = {
@@ -288,6 +268,35 @@ class DropoutLeNetBlock(Layer):
         x = self.dropout_3(x)
         return x
 
+class CGDDropoutLeNetBlock(Layer):
+    def __init__(self, initial_values,  activation = None, rate = .2):
+        super(CGDDropoutLeNetBlock, self).__init__()
+        self.activation = activation
+        self.rate = rate
+        self.dropout_1 = ConstantGausianDropoutGate(initial_values, activation = activation)
+        self.dense_2 = Dense(100, activation = activation)
+        self.dropout_2 = Dropout(rate)
+        self.dense_3 = Dense(100, activation = activation)
+        self.dropout_3 = Dropout(rate)
+
+    def call(self, inputs):
+        x = self.dropout_1(inputs)
+        x = self.dense_2(x)
+        x = self.dropout_2(x)
+        x = self.dense_3(x)
+        x = self.dropout_3(x)
+        return x
+
+class CGD2(Layer):
+    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch = tf.shape(inputs)[0]
+        dim = tf.shape(inputs)[1]
+        epsilon = tf.random.normal(shape=(batch, dim))
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
 class Sampling(Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
@@ -295,7 +304,7 @@ class Sampling(Layer):
         z_mean, z_log_var = inputs
         batch = tf.shape(z_mean)[0]
         dim = tf.shape(z_mean)[1]
-        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+        epsilon = tf.random.normal(shape=(batch, dim))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
 def create_model(
@@ -304,7 +313,7 @@ def create_model(
                 num_labels, 
                 encoder, 
                 model_name,
-                dropout_type = 'var',
+                dropout_type = 'cgd',
                 dropout_rate = .2):
   
   # Define Inputs
@@ -312,14 +321,29 @@ def create_model(
   
   #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
   if dropout_type == 'var':
-        x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
-        x = VarDropout()(x)
-        x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
-        x = VarDropout()(x)
-        x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
-        x = VarDropout()(x)
-  else:
+    x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
+    x = VarDropout()(x)
+    x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+    x = VarDropout()(x)
+    x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+    x = VarDropout()(x)
+
+  elif dropout_type == 'cgd':
+    x = Dense(300)(model_input)
+    y = []
+    for i in range(num_labels):
+      y.append(ConstantGausianDropoutGate(initial_values[i], activation = tf.nn.sigmoid)(x))
+    x = Concatenate()(y)
+    x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
+
+  elif dropout_type == 'encoder':
+    latent_inputs = tf.keras.Input(shape=(latent_dim,), name="z_sampling")    
+    x = CGD2()(latent_inputs)
+  
+  else:   
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
+
+
   model_out = Dense(num_labels,name='model_out')(x)
   
   # define model
@@ -340,8 +364,6 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
   epoch_loss_avg = tf.keras.metrics.Mean()
   epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
   val_accuracy = tf.keras.metrics.CategoricalAccuracy()
-
-
 
   # Prepare the validation dataset.
   # Reserve 5,000 samples for validation.
@@ -445,11 +467,11 @@ def get_varparams_class_means(predictions, y_test, num_labels):
 
 # Settings
 DIMENSION = 784
-EPOCHS = 100
+EPOCHS = 30
 intermediate_dim = 512
 BATCH_SIZE = 100
 latent_dim = 2
-vae_epochs = 1
+vae_epochs = 3
 
 if __name__ == '__main__':
 
@@ -477,7 +499,7 @@ if __name__ == '__main__':
   checkpoint_dir = os.path.dirname(checkpoint_path)
   cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                   save_weights_only=True,
-                                                  verbose=1)
+                                                  verbose=0)
 
   # load data
   (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(categorical=True)
