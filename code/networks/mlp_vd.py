@@ -51,7 +51,7 @@ class ConstantGausianDropoutGate(Layer):
     kernel_shape = (input_shape[-1],self.num_outputs)
 
     self.kernel = self.add_weight(shape = kernel_shape,
-                            initializer=tf.nn.softmax_cross_entropy_with_logits(tf.keras.initializers.RandomNormal(self.initial_theta,self.initial_log_sigma2)),
+                            initializer=tf.keras.initializers.RandomNormal(self.initial_theta,self.initial_log_sigma2),
                             trainable=False)
     if self.use_bias:
       self.b = self.add_weight(shape = (self.num_outputs,),
@@ -287,25 +287,24 @@ class CGDDropoutLeNetBlock(Layer):
         x = self.dropout_3(x)
         return x
 
-class CGD2(Layer):
-    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+
+class SamplingDropout(Layer):
 
     def call(self, inputs):
-        z_mean, z_log_var = inputs
-        batch = tf.shape(inputs)[0]
-        dim = tf.shape(inputs)[1]
-        epsilon = tf.random.normal(shape=(batch, dim))
+        logits,z_mean,z_log_var = inputs        
+        z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
+        z_log_var = tf.reshape(z_log_var,[tf.shape(z_log_var)[0],1])
+        epsilon = tf.random.normal(shape=tf.shape(logits))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
 
 class Sampling(Layer):
-    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
-
     def call(self, inputs):
         z_mean, z_log_var = inputs
-        batch = tf.shape(z_mean)[0]
-        dim = tf.shape(z_mean)[1]
-        epsilon = tf.random.normal(shape=(batch, dim))
+        epsilon = tf.random.normal(shape=tf.shape(z_mean))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
+
 
 def create_model(
                 x_train, 
@@ -313,13 +312,12 @@ def create_model(
                 num_labels, 
                 encoder, 
                 model_name,
-                dropout_type = 'cgd',
+                dropout_type = 'encoder',
                 dropout_rate = .2):
   
   # Define Inputs
+
   model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-  
-  #x = ConstantGausianDropoutGate(initial_values[i])(model_input)
   if dropout_type == 'var':
     x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
     x = VarDropout()(x)
@@ -332,17 +330,21 @@ def create_model(
     x = Dense(300)(model_input)
     y = []
     for i in range(num_labels):
-      y.append(ConstantGausianDropoutGate(initial_values[i], activation = tf.nn.sigmoid)(x))
+      y.append(CGDDropoutLeNetBlock(initial_values[i], activation = tf.nn.sigmoid)(x))      
+      #y.append(ConstantGausianDropoutGate(initial_values[i], activation = tf.nn.sigmoid)(x))
     x = Concatenate()(y)
     x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
 
   elif dropout_type == 'encoder':
-    latent_inputs = tf.keras.Input(shape=(latent_dim,), name="z_sampling")    
-    x = CGD2()(latent_inputs)
+    z,z_mean,z_log_var = encoder(model_input)
+    
+    x = SamplingDropout()([model_input,z[:,0],z[:,1]])
+    x = Dense(300)(x)
+    x = Dense(100)(x)
+    x = Dense(100)(x)
   
   else:   
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
-
 
   model_out = Dense(num_labels,name='model_out')(x)
   
@@ -471,7 +473,7 @@ EPOCHS = 30
 intermediate_dim = 512
 BATCH_SIZE = 100
 latent_dim = 2
-vae_epochs = 3
+vae_epochs = 2
 
 if __name__ == '__main__':
 
