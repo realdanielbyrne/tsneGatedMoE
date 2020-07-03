@@ -311,15 +311,16 @@ def create_model(
                 initial_values, 
                 num_labels, 
                 encoder, 
-                model_name,
-                dropout_type = 'encoder',
+                dropout_type = 'preencoder',
                 dropout_rate = .2):
   
   # Define Inputs
 
   model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
   if dropout_type == 'var':
+    z,_,_ = encoder(model_input)
     x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
+    x = SamplingDropout()([x,z[:,0],z[:,1]])
     x = VarDropout()(x)
     x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
     x = VarDropout()(x)
@@ -335,21 +336,54 @@ def create_model(
     x = Concatenate()(y)
     x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
 
-  elif dropout_type == 'encoder':
+  elif dropout_type == 'preencoder':
     z,z_mean,z_log_var = encoder(model_input)
-    
+    x = Dense(300)(model_input)
+    x = SamplingDropout()([x,z[:,0],z[:,1]])
+    x = Dense(100)(x)
+    x = SamplingDropout()([x,z[:,0],z[:,1]])
+    x = Dense(100)(x)
     x = SamplingDropout()([model_input,z[:,0],z[:,1]])
-    x = Dense(300)(x)
-    x = Dense(100)(x)
-    x = Dense(100)(x)
   
+  elif dropout_type == 'vae':
+    z,_,_ = encoder(model_input)
+    vae_out = decoder(z)    
+    x = Dense(300)(model_input)
+
+  elif dropout_type == 'conv':
+    model = keras.Sequential([
+      keras.layers.InputLayer(input_shape=(28, 28)),
+      keras.layers.Reshape(target_shape=(28, 28, 1)),
+      keras.layers.Conv2D(filters=12, kernel_size=(3, 3), activation='relu'),
+      keras.layers.MaxPooling2D(pool_size=(2, 2)),
+      keras.layers.Flatten(),
+      keras.layers.Dense(10)
+    ])
+    model_out = Dense(num_labels,name=dropout_type)(x)
+    model = Model(model_input, model_out, name = dropout_type)
+    model.summary()
+    return model
+
+  elif dropout_type == 'conv_cgd':
+    model = keras.Sequential([
+      keras.layers.InputLayer(input_shape=(28, 28)),
+      keras.layers.Reshape(target_shape=(28, 28, 1)),
+      keras.layers.Conv2D(filters=12, kernel_size=(3, 3), activation='relu'),
+      keras.layers.MaxPooling2D(pool_size=(2, 2)),
+      keras.layers.Flatten(),
+      keras.layers.Dense(10)
+    ])
+    model_out = Dense(num_labels,name=dropout_type)(x)
+    model = Model(model_input, model_out, name = dropout_type)
+    model.summary()
+    return model
+    
+
   else:   
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
 
-  model_out = Dense(num_labels,name='model_out')(x)
-  
-  # define model
-  model = Model(model_input, model_out, name = model_name)
+  model_out = Dense(num_labels,name=dropout_type)(x)
+  model = Model(model_input, model_out, name = dropout_type)
   model.summary()
   
   return model
@@ -489,7 +523,6 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   # parameters
-  model_name = 'mlp_cgvd.h5'
   save_dir = os.path.join(os.getcwd(), 'saved_models')
   log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
   tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -523,8 +556,6 @@ if __name__ == '__main__':
 
   # Define VAE model.
   outputs = decoder(z)
-  if os.path.isfile(checkpoint_path):
-    vae.load_weights(checkpoint_path)
   vae = tf.keras.Model(inputs=original_inputs, outputs=outputs, name="vae")
   vae.summary()
 
@@ -537,8 +568,6 @@ if __name__ == '__main__':
   optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
   vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())
   vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=BATCH_SIZE)
-  vae.save_weights(checkpoint_path)
-
 
   # gather predictions for the test batch
   predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
@@ -548,9 +577,8 @@ if __name__ == '__main__':
   else:
     initial_values = get_varparams_class_means(predictions, y_test, num_labels)
 
-
   # create model under test
-  model = create_model(x_train, initial_values, num_labels, encoder, model_name)
+  model = create_model(x_train, initial_values, num_labels, encoder, dropout_type='preencoder')
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -571,7 +599,7 @@ if __name__ == '__main__':
   
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'])
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[sparsity_cb], validation_split=.05)
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.05)
 
   # Add KL divergence regularization loss.
   kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
