@@ -13,12 +13,24 @@ from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
 from tensorflow.python.eager import context
 import tensorflow_model_optimization as tfmot
+from tensorflow.keras.utils import plot_model
+import matplotlib.pyplot as plt
 #from layers.vd import VarDropout, ConstantGausianDropout
 import utils
 
 
 #######################################################
 # vd
+
+'''
+input [10 classes]
+mean std from vae ->
+gate(program gate with a threshold that prefers a particular class)
+Mixture of expert, Outrageously large mixture of experts
+
+
+
+'''
 
 EPSILON = 1e-8
 
@@ -56,7 +68,7 @@ class ConstantGausianDropoutGate(Layer):
     if self.use_bias:
       self.b = self.add_weight(shape = (self.num_outputs,),
                             initializer = tf.keras.initializers.constant_initializer(self.initial_theta),
-                            trainable = True)
+                            trainable = False)
     else:
       self.b = None
 
@@ -127,12 +139,12 @@ class VarDropout(Layer):
                             regularizer=self.kernel_regularizer,
                             trainable=True)
 
-    if self.use_bias:
-      self.b = self.add_weight(shape = (self.num_outputs,),
-                            initializer = tf.constant_initializer(0.),
-                            trainable = True)
-    else:
-      self.b = None
+    # if self.use_bias:
+    #   self.b = self.add_weight(shape = (self.num_outputs,),
+    #                         initializer = tf.constant_initializer(0.),
+    #                         trainable = True)
+    # else:
+    #   self.b = None
 
     
   def call(self, inputs, training = None):
@@ -154,7 +166,7 @@ class VarDropout(Layer):
       std = tf.sqrt(tf.matmul(tf.square(inputs),tf.exp(self.log_sigma2)) + self.eps)
       val = tf.random.normal(tf.shape(std),mu,std)
       
-      # Constants
+      # # Constants
       k1, k2, k3, c = 0.63576, 1.8732, 1.48695, -0.63576
 
       # Compute element-wise dkl
@@ -173,8 +185,8 @@ class VarDropout(Layer):
       val = tf.matmul(inputs, self.theta * weight_mask)
       dkl_loss = 0.
 
-    if self.use_bias:
-      val = tf.nn.bias_add(val, self.b)
+    # if self.use_bias:
+    #   val = tf.nn.bias_add(val, self.b)
     
     if self.activation is not None:
       val = self.activation(val)
@@ -287,24 +299,19 @@ class CGDDropoutLeNetBlock(Layer):
         x = self.dropout_3(x)
         return x
 
-
 class SamplingDropout(Layer):
-
     def call(self, inputs):
-        logits,z_mean,z_log_var = inputs        
+        logits, z_mean,z_log_var = inputs        
         z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
         z_log_var = tf.reshape(z_log_var,[tf.shape(z_log_var)[0],1])
         epsilon = tf.random.normal(shape=tf.shape(logits))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
-
 class Sampling(Layer):
     def call(self, inputs):
-        z_mean, z_log_var = inputs
-        epsilon = tf.random.normal(shape=tf.shape(z_mean))
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
-
-
+      z_mean, z_log_var = inputs
+      epsilon = tf.random.normal(shape=tf.shape(z_mean))
+      return z_mean + tf.math.exp(0.5 * z_log_var) * epsilon
 
 def create_model(
                 x_train, 
@@ -315,12 +322,10 @@ def create_model(
                 dropout_rate = .2):
   
   # Define Inputs
-
   model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
   if dropout_type == 'var':
     z,_,_ = encoder(model_input)
     x = Dense(300,kernel_regularizer=tf.keras.regularizers.l2(0.001))(model_input)
-    x = SamplingDropout()([x,z[:,0],z[:,1]])
     x = VarDropout()(x)
     x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
     x = VarDropout()(x)
@@ -337,13 +342,21 @@ def create_model(
     x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001))(x)
 
   elif dropout_type == 'preencoder':
-    z,z_mean,z_log_var = encoder(model_input)
+    z,_,_ = encoder(model_input)
+    z_mean = z[:,0]
+    z_log_var = z[:,1]
     x = Dense(300)(model_input)
     x = SamplingDropout()([x,z[:,0],z[:,1]])
     x = Dense(100)(x)
     x = SamplingDropout()([x,z[:,0],z[:,1]])
     x = Dense(100)(x)
-    x = SamplingDropout()([model_input,z[:,0],z[:,1]])
+    
+    model_out = Dense(num_labels,name=dropout_type)(x)
+    model = Model(model_input, model_out, name = dropout_type)
+    model.summary()
+  
+
+    return model
   
   elif dropout_type == 'vae':
     z,_,_ = encoder(model_input)
@@ -378,7 +391,6 @@ def create_model(
     model.summary()
     return model
     
-
   else:   
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
 
@@ -395,7 +407,7 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
 
   # Instantiate a loss
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True,reduction=tf.keras.losses.Reduction.AUTO)
-
+  
   # Instantiate an optimizer.
   epoch_loss_avg = tf.keras.metrics.Mean()
   epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
@@ -414,7 +426,7 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
   train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
   train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
 
-  @tf.function
+  #@tf.function
   def train_step(x, y):
     with tf.GradientTape() as tape:
       logits = model(x_batch_train, training=True)  # Logits for this minibatch
@@ -423,6 +435,7 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
       loss_value = loss_fn(y_batch_train, logits)
 
       # Add kld layer losses created during this forward pass:
+      vdloss(model)
       kld_losses =  sum(model.losses) 
       kld_losses = kld_losses #/ float(x_train.shape[0])
       loss_value += kld_losses
@@ -466,13 +479,20 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test):
     val_acc = val_accuracy.result()
     val_accuracy.reset_states()
     print("Validation acc: %.4f" % (float(val_acc),))
-  
+
 
   test_step(x_test, y_test)
   val_acc = val_accuracy.result()
   val_accuracy.reset_states()
   print("Test acc: %.4f" % (float(val_acc),))
-    
+
+def vdloss(model):
+  log_alphas = []
+  theta_logsigma2 = [layer.variables for layer in model.layers if 'var_dropout' in layer.name]
+  for theta, log_sigma2 in theta_logsigma2:
+    log_alphas.append(compute_log_alpha(theta, log_sigma2))
+  return theta_logsigma2
+
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
   initial_thetas = []
@@ -500,14 +520,13 @@ def get_varparams_class_means(predictions, y_test, num_labels):
   initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
   return initial_values
 
-
 # Settings
-DIMENSION = 784
+original_dim = 784
 EPOCHS = 30
 intermediate_dim = 512
-BATCH_SIZE = 100
+BATCH_SIZE = 128
 latent_dim = 2
-vae_epochs = 2
+vae_epochs = 10
 
 if __name__ == '__main__':
 
@@ -541,33 +560,48 @@ if __name__ == '__main__':
   input_dim = output_dim = x_train.shape[-1]
   
   # Define encoder model.
-  original_inputs = tf.keras.Input(shape=(DIMENSION,), name="encoder_input")
+  original_inputs = tf.keras.Input(shape=(original_dim,), name="encoder_input")
   x = Dense(intermediate_dim, activation="relu")(original_inputs)
   z_mean = Dense(latent_dim, name="z_mean")(x)
   z_log_var = Dense(latent_dim, name="z_log_var")(x)
-  z = Sampling()((z_mean, z_log_var))
-  encoder = tf.keras.Model(inputs=original_inputs, outputs=[z,z_mean,z_log_var], name="encoder")
+  z = Sampling()([z_mean, z_log_var])
+  encoder = tf.keras.Model(inputs=original_inputs, outputs=[z_mean,z_log_var,z], name="encoder")
 
   # Define decoder model.
-  latent_inputs = tf.keras.Input(shape=(latent_dim,), name="z_sampling")
-  x = Dense(intermediate_dim, activation="relu")(latent_inputs)
-  outputs = Dense(DIMENSION, activation="sigmoid")(x)
-  decoder = tf.keras.Model(inputs=latent_inputs, outputs=outputs, name="decoder")
+  latent_inputs = Input(shape=(latent_dim,), name='z_sampling')
+  x = Dense(intermediate_dim, activation='relu')(latent_inputs)
+  outputs = Dense(original_dim, activation='sigmoid')(x)
+  decoder = Model(latent_inputs, outputs, name='decoder')
+  decoder.summary()
 
   # Define VAE model.
-  outputs = decoder(z)
+  outputs = decoder(encoder(original_inputs)[2])
   vae = tf.keras.Model(inputs=original_inputs, outputs=outputs, name="vae")
   vae.summary()
 
   # Add KL divergence regularization loss.
-  kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
-  kl_loss_i = tf.identity(kl_loss)
-  vae.add_loss(kl_loss_i)
+  reconstruction_loss = tf.keras.losses.mean_squared_error(original_inputs, outputs)
+  reconstruction_loss *= original_dim
+  
+  kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+  kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+  kl_loss *= -0.5
+
+  # add loss to model
+  vae_loss = tf.reduce_mean(reconstruction_loss + kl_loss)
+  vae.add_loss(vae_loss)
 
   # Train
   optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-  vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())
-  vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=BATCH_SIZE)
+  vae.compile(optimizer)
+  #vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=BATCH_SIZE)
+  
+  # utils.plot_encoding(encoder,
+  #               [x_test, y_test],
+  #               batch_size=BATCH_SIZE,
+  #               model_name="vae_mlp")
+
+  #encoder.trainable = False
 
   # gather predictions for the test batch
   predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
@@ -578,7 +612,7 @@ if __name__ == '__main__':
     initial_values = get_varparams_class_means(predictions, y_test, num_labels)
 
   # create model under test
-  model = create_model(x_train, initial_values, num_labels, encoder, dropout_type='preencoder')
+  model = create_model(x_train, initial_values, num_labels, encoder, dropout_type='var')
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -595,16 +629,13 @@ if __name__ == '__main__':
 
   # Train
   # use custom training loop to assist in debugging
-  #custom_train(model, x_train, y_train, optimizer, x_test, y_test)
+  custom_train(model, x_train, y_train, optimizer, x_test, y_test)
   
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'])
   model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.05)
+  plot_model(model,to_file= 'plots\\mlp_vd.png')
 
-  # Add KL divergence regularization loss.
-  kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
-  kl_loss_i = tf.identity(kl_loss)
-  vae.add_loss(kl_loss_i)
 
   #model accuracy on test dataset
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)

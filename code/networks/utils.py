@@ -30,8 +30,9 @@ def sparseness(log_alphas, thresh=3):
 def parse_cmd(description = 'AE Embedding Classifier'):
   parser = argparse.ArgumentParser(description=description)
   parser.add_argument("-c", "--categorical",
-                      action='store_false',
-                      help="Use one-hot encoding.")
+                      default=True,
+                      help="Convert class vectors to binary class matrices ( One Hot Encoding ).")
+
 
   parser.add_argument("-ds", "--dataset",
                       action='store',
@@ -63,6 +64,8 @@ def load_minst_data(categorical):
     # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train)
     y_test_cat = to_categorical(y_test)
+  else:
+    y_test_cat = y_test
 
   return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
 
@@ -81,12 +84,11 @@ def load_cifar10_data(categorical):
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
     y_train = to_categorical(y_train, 10)
-    y_test = to_categorical(y_test, 10)
     y_test_cat = to_categorical(y_test)
+  else:
+    y_test_cat = y_test    
 
   return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
-
-
 
 def plot_encoding(encoder,
                  data,
@@ -113,3 +115,26 @@ def plot_encoding(encoder,
     plt.ylabel("z[1]")
     plt.savefig(filename)
     plt.show()
+
+
+def plot_label_clusters(encoder, data, labels):
+    # display a 2D plot of the digit classes in the latent space
+    z_mean, _, _ = encoder.predict(data)
+    plt.figure(figsize=(12, 10))
+    plt.scatter(z_mean[:, 0], z_mean[:, 1], c=labels)
+    plt.colorbar()
+    plt.xlabel("z[0]")
+    plt.ylabel("z[1]")
+    plt.show()
+
+
+def plot_layer_activations(model,data):
+  from tensorflow.keras import backend as K
+  x_test, y_test = data
+  input1 = model.input               # input placeholder
+  output1 = [layer.output for layer in model.layers]# all layer outputs
+  fun = K.function([input1, False],output1)# evaluation function
+
+  # Testing
+  layer_outputs = fun([x_test, 1.])
+  

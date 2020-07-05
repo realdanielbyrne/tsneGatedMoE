@@ -8,6 +8,8 @@ import argparse
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.layers import Input,Dense, Dropout, Activation, Layer, Add, Concatenate
+
 from tensorflow.keras import Model
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras import backend as K
@@ -132,27 +134,115 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
   #vae_mlp.summary()
   return vae_mlp
+  
+class VAE(Model):
+    def __init__(self, encoder, decoder, **kwargs):
+        super(VAE, self).__init__(**kwargs)
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def train_step(self, data):
+        if isinstance(data, tuple):
+            data = data[0]
+        with tf.GradientTape() as tape:
+            z_mean, z_log_var, z = encoder(data)
+            reconstruction = decoder(z)
+            reconstruction_loss = tf.reduce_mean(
+                keras.losses.binary_crossentropy(data, reconstruction)
+            )
+            reconstruction_loss *= 28 * 28
+            kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
+            kl_loss = tf.reduce_mean(kl_loss)
+            kl_loss *= -0.5
+            total_loss = reconstruction_loss + kl_loss
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        return {
+            "loss": total_loss,
+            "reconstruction_loss": reconstruction_loss,
+            "kl_loss": kl_loss,
+        }
+
 
 if __name__ == '__main__':
 
   intermediate_dim = 512
   mlp_hidden_dim = 512
   batch_size = 128
-  latent_dim = 32
-  vae_epochs = 3
-  epochs = 20
+  latent_dim = 2
+  vae_epochs = 50
+  epochs = 30
   args = utils.parse_cmd()
   (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
   input_dim = output_dim = x_train.shape[-1]
+  
+  # # Define encoder model.
+  # original_inputs = tf.keras.Input(shape=(input_dim,), name="encoder_input")
+  # x = Dense(intermediate_dim, activation="relu")(original_inputs)
+  # z_mean = Dense(latent_dim, name="z_mean")(x)
+  # z_log_var = Dense(latent_dim, name="z_log_var")(x)
+  # z = Sampling()((z_mean, z_log_var))
+  # encoder = tf.keras.Model(inputs=original_inputs, outputs=[z,z_mean,z_log_var], name="encoder")
 
-  vae, encoder = create_vae_model(input_dim, latent_dim, intermediate_dim, output_dim)
-  vae.compile(optimizer='adam')
+  # Encoder CNN
+  encoder_inputs = keras.Input(shape=(28, 28, 1))
+  x = layers.Conv2D(32, 3, activation="relu", strides=2, padding="same")(encoder_inputs)
+  x = layers.Conv2D(64, 3, activation="relu", strides=2, padding="same")(x)
+  x = layers.Flatten()(x)
+  x = layers.Dense(16, activation="relu")(x)
+  z_mean = layers.Dense(latent_dim, name="z_mean")(x)
+  z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
+  z = Sampling()([z_mean, z_log_var])
+  encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
+  encoder.summary()
 
-  # train the autoencoder
-  vae.fit(x_train,
-      epochs = vae_epochs,
-      batch_size = batch_size,
-      validation_data = (x_test, None))
+
+  # # Define decoder model.
+  # latent_inputs = tf.keras.Input(shape=(latent_dim,), name="z_sampling")
+  # x = Dense(intermediate_dim, activation="relu")(latent_inputs)
+  # outputs = Dense(input_dim)(x)
+  # decoder = tf.keras.Model(inputs=latent_inputs, outputs=outputs, name="decoder")
+
+  #decoder cnn
+  latent_inputs = keras.Input(shape=(latent_dim,))
+  x = layers.Dense(7 * 7 * 64, activation="relu")(latent_inputs)
+  x = layers.Reshape((7, 7, 64))(x)
+  x = layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same")(x)
+  x = layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same")(x)
+  decoder_outputs = layers.Conv2DTranspose(1, 3, activation="sigmoid", padding="same")(x)
+  decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
+  decoder.summary()
+
+  # # Define VAE model.
+  # outputs = decoder(z)
+  # vae = tf.keras.Model(inputs = original_inputs, outputs=outputs, name="vae")
+  # vae.summary()
+
+  # Add KL divergence regularization loss.
+  # kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
+  # kl_loss_i = tf.identity(kl_loss)
+  # vae.add_loss(kl_loss_i)
+
+  (x_train2, _), (x_test2, _) = keras.datasets.mnist.load_data()
+  mnist_digits = np.concatenate([x_train2, x_test2], axis=0)
+  mnist_digits = np.expand_dims(mnist_digits, -1).astype("float32") / 255
+
+  vae = VAE(encoder, decoder)
+  vae.compile(optimizer=keras.optimizers.Adam())
+  vae.fit(mnist_digits, epochs=30, batch_size=128)
+
+
+  # # train the autoencoder
+  # optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+  # vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())
+  # vae.fit(x_train,x_train,
+  #     epochs = vae_epochs,
+  #     batch_size = batch_size)
+
+  # utils.plot_encoding(encoder,
+  #               [x_test, y_test],
+  #               batch_size=batch_size,
+  #               model_name="vae_mlp")
 
   encoder.trainable = False
   #encoder.compile()
@@ -164,11 +254,8 @@ if __name__ == '__main__':
 
   vae_mlp.fit(x_train, y_train,
             batch_size=batch_size,
-            epochs=epochs)
-  # utils.plot_encoding(encoder,
-  #               [x_test, y_test],
-  #               batch_size=batch_size,
-  #               model_name="vae_mlp")
+            epochs=epochs, validation_split=.01)
+
 
   # score trained model
   scores = vae_mlp.evaluate(x_test,

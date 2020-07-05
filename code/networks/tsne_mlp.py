@@ -6,11 +6,9 @@ and run additional generated data through the trained model"""
 
 import sys, os, datetime, shutil, zipfile, glob,math
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import argparse
-import plaidml.keras # used plaidml so I can run on any machine's video card regardless if it is NVIDIA, AMD or Intel.
 import utils
 
 # Using Tensorflow
@@ -25,15 +23,15 @@ import utils
 #from tensorflow.keras import backend as K
 
 # Using Base Keras
-import keras
-from keras.models import Model
-from keras.layers import Input, Dense, Dropout, Activation, Lambda, multiply, Layer, concatenate
-import keras.backend as K
-from keras.initializers import RandomNormal
-from keras.optimizers import SGD
-from keras.utils import plot_model, to_categorical
-from keras.datasets import cifar10, mnist
-import tsne_sp
+import tensorflow.keras
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, Dropout, Activation, Lambda, multiply, Layer, concatenate
+import tensorflow.keras.backend as K
+from tensorflow.keras.initializers import RandomNormal
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.utils import plot_model, to_categorical
+from tensorflow.keras.datasets import cifar10, mnist
+from layers.tsne_mp import tsne_mp
 
 # Setings
 plt.style.use('ggplot')
@@ -97,10 +95,11 @@ def create_test_model(x_train):
   return model
 
 def fit_test_model(x_train, override):
+  p_train = create_p(x_train)
   if override or not os.path.exists(combined_model_path):
     print('Creating TEST model.')
     model = create_test_model(x_train)
-    model.compile(optimizer='adam', loss=[tsne_sp.KLdivergence,'categorical_crossentropy'], metrics=['accuracy'])
+    model.compile(optimizer='adam', loss=[tsne_mp.KLdivergence,'categorical_crossentropy'], metrics=['accuracy'])
     model.fit(
         [x_train,x_train], [p_train,y_train],
         epochs=nb_epoch, batch_size = batch_size,
@@ -163,7 +162,7 @@ def create_combined_model2(x_train):
   # Instantiate embedding model
   embedding = Model(input, [mean,var])
   embedding.summary()
-  #plot_model(embedding, to_file='ptsne_rp.png', show_shapes=True)
+  plot_model(embedding, to_file='ptsne_rp.png', show_shapes=True)
 
   # Build gated mixture of experts model
   z = Lambda(sampling, output_shape=(x_train.shape[1],), name='z')([mean, var,x_train.shape[1]])
@@ -201,7 +200,7 @@ def fit_embedding_model(x_train, override):
   p_train = create_p(x_train)
 
   embedding_model = create_ptsne_embedding_model(x_train)
-  embedding_model.compile(optimizer='adam', loss=tsne_sp.KLdivergence, metrics=['accuracy'])
+  embedding_model.compile(optimizer='adam', loss=tsne_mp.KLdivergence, metrics=['accuracy'])
 
   embedding_model.fit(
     x_train, p_train,
@@ -234,10 +233,10 @@ if __name__ == '__main__':
   if args.dataset == 'mnist':
     (x_train, y_train), (x_test, y_test), num_labels,y_test_cat = utils.load_minst_data(args.sparse)
   else:
-    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = utils.load_cifar10_data()
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = utils.load_cifar10_data(True)
 
   # Create embedding model
-  #embedding_model = fit_embedding_model(x_train, override)
+  model = fit_embedding_model(x_train, override)
 
   # Fit Combined Model
   #  model2 = fit_combined_model2(x_train, y_train)
@@ -249,12 +248,12 @@ if __name__ == '__main__':
   # create models
 
   # calculate P
-  p_train = create_p(x_train)
-  model = fit_test_model(x_train, override)
+  # p_train = create_p(x_train)
+  # model = fit_test_model(x_train, override)
 
-  testscore = model.evaluate([x_test,x_test], [p_train[:10000],y_test],batch_size = batch_size, verbose=1)
-  print('Test Loss:', testscore[0])
-  print('Test Accuracy:', testscore[1])
+  # testscore = model.evaluate([x_test,x_test], [p_train[:10000],y_test],batch_size = batch_size, verbose=1)
+  # print('Test Loss:', testscore[0])
+  # print('Test Accuracy:', testscore[1])
+
   pred = model.predict([x_test,x_test])
-
-  #plot_ptsne_model(pred[0],c)
+  plot_ptsne_model(pred[0],y_test)
