@@ -12,7 +12,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import cifar10, mnist
 
-
+EPSILON = 1e-8
 
 #######################################################
 # handy function to keep track of sparsity
@@ -26,6 +26,45 @@ def sparseness(log_alphas, thresh=3):
         N_total += n_total
     return 1.0 - N_active/N_total
 
+
+def get_varparams_class_samples(predictions, y_test, num_labels):
+  initial_thetas = []
+  initial_log_sigma2s = []  
+
+  for x in range(num_labels):
+    targets = np.where(y_test == x)[0]
+    sample = targets[np.random.randint(targets.shape[0])]
+    initial_thetas.append(predictions[sample][0])
+    initial_log_sigma2s.append(predictions[sample][1])
+  
+  initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
+  return initial_values
+
+def get_varparams_class_means(predictions, y_test, num_labels):
+  initial_thetas = []
+  initial_log_sigma2s = []
+  
+  for x in range(num_labels):
+    targets = predictions[np.where(y_test == x)[0]]
+    means = np.mean(targets, axis = 0)
+    initial_thetas.append(means[0])
+    initial_log_sigma2s.append(means[1])
+
+  initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
+  return initial_values
+
+def vd_loss(model):
+  log_alphas = []
+  fraction = 0.
+  theta_logsigma2 = [layer.variables for layer in model.layers if 'var_dropout' in layer.name]
+  for theta, log_sigma2, step in theta_logsigma2:
+    log_alphas.append(compute_log_alpha(theta, log_sigma2))
+    fraction = tf.minimum(tf.maximum(fraction,step),1.)
+  return log_alphas, fraction
+
+@tf.function
+def compute_log_alpha(theta, log_sigma2):
+  return log_sigma2 - tf.math.log(tf.square(theta) + EPSILON)
 
 def parse_cmd(description = 'AE Embedding Classifier'):
   parser = argparse.ArgumentParser(description=description)
@@ -132,8 +171,8 @@ def plot_layer_activations(model,x_test,y_test):
   
   from tensorflow.keras import backend as K
   model_in = model.input               # input placeholder
-  model_out = [layer.output for layer in model.layers]# all layer outputs
-  fun = K.function([model_in, False], model_out)# evaluation function
+  model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
+  fun = K.function([model_in, False], model_out) # evaluation function
 
   # Testing
   layer_outputs = fun([x_test, 1.])
@@ -166,9 +205,9 @@ def layer_to_visualize(model,layer,test_image):
 
   
 #function to get activations of a layer
-def get_activations(model, layer, X_batch):
+def get_activations(model, layer, x_train):
     get_activations = K.function([model.layers[0].input, K.learning_phase()], [model.layers[layer].output,])
-    activations = get_activations([X_batch,0])
+    activations = get_activations([x_train,0])
     return activations
 
 #Get activations using layername

@@ -19,9 +19,6 @@ from layers import VarDropout
 import utils
 import keract
 
-#######################################################
-# vd
-
 EPSILON = 1e-8
 
 class ConstantGausianDropoutGate(Layer):
@@ -81,10 +78,6 @@ class ConstantGausianDropoutGate(Layer):
   def compute_output_shape(self, input_shape):
     return  (input_shape[0],self.num_outputs)
   
-
-@tf.function
-def compute_log_alpha(theta, log_sigma2):
-  return log_sigma2 - tf.math.log(tf.square(theta) + EPSILON)
 
 class DropoutLeNetBlock(Layer):
     def __init__(self, activation = tf.keras.activations.relu, rate = .2):
@@ -245,10 +238,10 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
 
   # Prepare the validation dataset.
   # Reserve 5,000 samples for validation.
-  x_val = x_train[-5000:]
-  y_val = y_train[-5000:]
-  x_train = x_train[:-5000]
-  y_train = y_train[:-5000]
+  x_val = x_train[-3000:]
+  y_val = y_train[-3000:]
+  x_train = x_train[:-3000]
+  y_train = y_train[:-3000]
   val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
   val_dataset = val_dataset.batch(BATCH_SIZE)
 
@@ -324,14 +317,6 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
   val_accuracy.reset_states()
   print("Test acc: %.4f" % (float(val_acc),))
 
-def vd_loss(model):
-  log_alphas = []
-  fraction = 0.
-  theta_logsigma2 = [layer.variables for layer in model.layers if 'var_dropout' in layer.name]
-  for theta, log_sigma2, step in theta_logsigma2:
-    log_alphas.append(compute_log_alpha(theta, log_sigma2))
-    fraction = tf.minimum(tf.maximum(fraction,step),1.)
-  return log_alphas, fraction
 
 def negative_dkl(log_alpha=None):
   # Constant values for approximating the kl divergence
@@ -344,35 +329,10 @@ def negative_dkl(log_alpha=None):
   return -tf.reduce_sum(eltwise_dkl)
 
 
-def get_varparams_class_samples(predictions, y_test, num_labels):
-  initial_thetas = []
-  initial_log_sigma2s = []  
-
-  for x in range(num_labels):
-    targets = np.where(y_test == x)[0]
-    sample = targets[np.random.randint(targets.shape[0])]
-    initial_thetas.append(predictions[sample][0])
-    initial_log_sigma2s.append(predictions[sample][1])
-  
-  initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
-  return initial_values
-
-def get_varparams_class_means(predictions, y_test, num_labels):
-  initial_thetas = []
-  initial_log_sigma2s = []
-  
-  for x in range(num_labels):
-    targets = predictions[np.where(y_test == x)[0]]
-    means = np.mean(targets, axis = 0)
-    initial_thetas.append(means[0])
-    initial_log_sigma2s.append(means[1])
-
-  initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
-  return initial_values
 
 # Settings
 original_dim = 784
-EPOCHS = 30
+EPOCHS = 10
 intermediate_dim = 512
 BATCH_SIZE = 128
 latent_dim = 2
@@ -470,14 +430,10 @@ if __name__ == '__main__':
 
   # gather predictions for the test batch
   predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
-
-  if args.embedding_type == 'sample':
-    initial_values = get_varparams_class_samples(predictions, y_test, num_labels)
-  else:
-    initial_values = get_varparams_class_means(predictions, y_test, num_labels)
+  initial_values = utils.get_varparams_class_means(predictions, y_test, num_labels)
 
   # create model under test
-  model = create_model(x_train, initial_values, num_labels, encoder, model_type=args.model_type)
+  model = create_model(x_train, initial_values, num_labels, encoder, model_type='cgd')
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -505,3 +461,14 @@ if __name__ == '__main__':
   print('\nMLP Control Model Test Loss:', score[0])
   print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
 
+  def plot_layer_activations(model,x_test,y_test):
+
+    from tensorflow.keras import backend as K
+    model_in = model.input               # input placeholder
+    model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
+    fun = K.function([model_in], model_out) # evaluation function
+    layer_outputs = fun([x_test, 1.])
+
+
+
+  plot_layer_activations(model,x_test,y_test)
