@@ -467,8 +467,24 @@ if __name__ == '__main__':
     model_in = model.input               # input placeholder
     model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
     fun = K.function([model_in], model_out) # evaluation function
-    layer_outputs = fun([x_test, 1.])
+    
+    layer_outputs = fun([x_test[:100], 1.])   
 
+    x = np.ones((layer_outputs[1].shape))*np.expand_dims(y_test[:100],1)
+    x = x*tf.random.normal(shape=(layer_outputs[1].shape),mean=1,stddev=.01)
+    y = np.ones((layer_outputs[1].shape))*y
+    c = tf.nn.softmax(np.squeeze(layer_outputs[1]))*100    
+    plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
+    plt.colorbar()
+    plt.show()
+
+    x = np.ones((layer_outputs[2].shape))*np.expand_dims(y_test[:100],1)
+    x = x*tf.random.normal(shape=(layer_outputs[2].shape),mean=1,stddev=.01)
+    y = np.ones((layer_outputs[2].shape))*y
+    c = tf.nn.softmax(np.squeeze(layer_outputs[2])) *100   
+    plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
+    plt.colorbar()
+    plt.show()
 
 
   plot_layer_activations(model,x_test,y_test)
