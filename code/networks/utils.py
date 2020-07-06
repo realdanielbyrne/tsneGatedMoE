@@ -57,8 +57,8 @@ def load_minst_data(categorical):
   input_size = image_size * image_size
 
   # resize and normalize
-  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255
-  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255
+  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255.
+  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255.
 
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
@@ -78,8 +78,8 @@ def load_cifar10_data(categorical):
   # compute the number of labels
   num_labels = len(np.unique(y_train))
 
-  x_train = x_train.reshape(-1, channel * row * col).astype('float32') / 255
-  x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255
+  x_train = x_train.reshape(-1, channel * row * col).astype('float32') / 255.
+  x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255.
 
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
@@ -128,13 +128,94 @@ def plot_label_clusters(encoder, data, labels):
     plt.show()
 
 
-def plot_layer_activations(model,data):
+def plot_layer_activations(model,x_test,y_test):
+  
   from tensorflow.keras import backend as K
-  x_test, y_test = data
-  input1 = model.input               # input placeholder
-  output1 = [layer.output for layer in model.layers]# all layer outputs
-  fun = K.function([input1, False],output1)# evaluation function
+  model_in = model.input               # input placeholder
+  model_out = [layer.output for layer in model.layers]# all layer outputs
+  fun = K.function([model_in, False], model_out)# evaluation function
 
   # Testing
   layer_outputs = fun([x_test, 1.])
+
+def layer_to_visualize(model,layer,test_image):
+    '''
+    # Specify the layer to want to visualize
+    layer_to_visualize(convout1)
+    '''
+    inputs = [K.learning_phase()] + model.inputs
+
+    _convout1_f = K.function(inputs, [layer.output])
+    def convout1_f(X):
+        # The [0] is to disable the training phase flag
+        return _convout1_f([0] + [X])
+
+    convolutions = convout1_f(test_image)
+    convolutions = np.squeeze(convolutions)
+
+    print ('Shape of conv:', convolutions.shape)
+
+    n = convolutions.shape[0]
+    n = int(np.ceil(np.sqrt(n)))
+
+    # Visualization of each filter of the layer
+    fig = plt.figure(figsize=(12,8))
+    for i in range(len(convolutions)):
+        ax = fig.add_subplot(n,n,i+1)
+        ax.imshow(convolutions[i], cmap='gray')
+
   
+#function to get activations of a layer
+def get_activations(model, layer, X_batch):
+    get_activations = K.function([model.layers[0].input, K.learning_phase()], [model.layers[layer].output,])
+    activations = get_activations([X_batch,0])
+    return activations
+
+#Get activations using layername
+def get_activation_from_layer(model,layer_name,layers,layers_dim,img):
+  acti = get_activations(model, layers[layer_name], img.reshape(1,256,256,3))[0].reshape(layers_dim[layer][0],layers_dim[layer_name][1],layers_dim[layer_name][2])
+  return np.sum(acti,axis=2)  
+
+# #Map layer name with layer index
+# layers = dict()
+# index = None
+# for idx, layer in enumerate(model.layers):
+#   layers[layer.name] = idx
+
+# #Map layer name with its dimension
+# layers_dim = dict()
+
+# for layer in model.layers:
+#   layers_dim[layer.name] = layer.get_output_at(0).get_shape().as_list()[1:]
+
+# img1 = utils.load_img("image.png", target_size=(256, 256))
+
+# #define the layer you want to visualize
+# layer_name = "conv2d_22"
+# plt.imshow(get_activation_from_layer(model,layer_name,layers,layers_dim, img1), cmap="jet")
+
+
+def print_names_and_shapes(activations: dict):
+    for layer_name, layer_activations in activations.items():
+        print(layer_name, layer_activations.shape)
+    print('-' * 80)
+
+
+def print_names_and_values(activations: dict):
+    for layer_name, layer_activations in activations.items():
+        print(layer_name)
+        print(layer_activations)
+        print('')
+    print('-' * 80)
+
+
+def gpu_dynamic_mem_growth():
+    # Check for GPUs and set them to dynamically grow memory as needed
+    # Avoids OOM from tensorflow greedily allocating GPU memory
+    try:
+        gpu_devices = tf.config.list_physical_devices('GPU')
+        if len(gpu_devices) > 0:
+            for gpu in gpu_devices:
+                tf.config.experimental.set_memory_growth(gpu, True)
+    except AttributeError:
+        print('Upgrade your tensorflow to 2.x to have the gpu_dynamic_mem_growth feature.')

@@ -3,3 +3,4 @@
 /logs
 /code/networks/__pycache__
 /code/networks/layers/__pycache__/
+/code/networks/layers/__pycache__/__init__.cpython-38.pyc

@@ -170,84 +170,60 @@ if __name__ == '__main__':
   mlp_hidden_dim = 512
   batch_size = 128
   latent_dim = 2
-  vae_epochs = 50
+  vae_epochs = 10
   epochs = 30
   args = utils.parse_cmd()
   (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
-  input_dim = output_dim = x_train.shape[-1]
+  original_dim = output_dim = x_train.shape[-1]
   
-  # # Define encoder model.
-  # original_inputs = tf.keras.Input(shape=(input_dim,), name="encoder_input")
-  # x = Dense(intermediate_dim, activation="relu")(original_inputs)
-  # z_mean = Dense(latent_dim, name="z_mean")(x)
-  # z_log_var = Dense(latent_dim, name="z_log_var")(x)
-  # z = Sampling()((z_mean, z_log_var))
-  # encoder = tf.keras.Model(inputs=original_inputs, outputs=[z,z_mean,z_log_var], name="encoder")
 
-  # Encoder CNN
-  encoder_inputs = keras.Input(shape=(28, 28, 1))
-  x = layers.Conv2D(32, 3, activation="relu", strides=2, padding="same")(encoder_inputs)
-  x = layers.Conv2D(64, 3, activation="relu", strides=2, padding="same")(x)
-  x = layers.Flatten()(x)
-  x = layers.Dense(16, activation="relu")(x)
-  z_mean = layers.Dense(latent_dim, name="z_mean")(x)
-  z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
+  # Define encoder model.
+  original_inputs = tf.keras.Input(shape=(original_dim,), name="encoder_input")
+  x = Dense(intermediate_dim, activation="relu")(original_inputs)
+  z_mean = Dense(latent_dim, name="z_mean")(x)
+  z_log_var = Dense(latent_dim, name="z_log_var")(x)
   z = Sampling()([z_mean, z_log_var])
-  encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
-  encoder.summary()
+  encoder = tf.keras.Model(inputs=original_inputs, outputs=[z_mean,z_log_var,z], name="encoder")
 
-
-  # # Define decoder model.
-  # latent_inputs = tf.keras.Input(shape=(latent_dim,), name="z_sampling")
-  # x = Dense(intermediate_dim, activation="relu")(latent_inputs)
-  # outputs = Dense(input_dim)(x)
-  # decoder = tf.keras.Model(inputs=latent_inputs, outputs=outputs, name="decoder")
-
-  #decoder cnn
-  latent_inputs = keras.Input(shape=(latent_dim,))
-  x = layers.Dense(7 * 7 * 64, activation="relu")(latent_inputs)
-  x = layers.Reshape((7, 7, 64))(x)
-  x = layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same")(x)
-  x = layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same")(x)
-  decoder_outputs = layers.Conv2DTranspose(1, 3, activation="sigmoid", padding="same")(x)
-  decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
+  # Define decoder model.
+  latent_inputs = Input(shape=(latent_dim,), name='z_sampling')
+  x = Dense(intermediate_dim, activation='relu')(latent_inputs)
+  outputs = Dense(original_dim, activation='sigmoid')(x)
+  decoder = Model(latent_inputs, outputs, name='decoder')
   decoder.summary()
 
-  # # Define VAE model.
-  # outputs = decoder(z)
-  # vae = tf.keras.Model(inputs = original_inputs, outputs=outputs, name="vae")
-  # vae.summary()
+  # Define VAE model.
+  outputs = decoder(encoder(original_inputs)[2])
+  vae = tf.keras.Model(inputs=original_inputs, outputs=outputs, name="vae")
+  vae.summary()
 
   # Add KL divergence regularization loss.
-  # kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
-  # kl_loss_i = tf.identity(kl_loss)
-  # vae.add_loss(kl_loss_i)
+  reconstruction_loss = tf.keras.losses.mean_squared_error(original_inputs, outputs)
+  reconstruction_loss *= original_dim
+  
+  kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+  kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+  kl_loss *= -0.5
 
-  (x_train2, _), (x_test2, _) = keras.datasets.mnist.load_data()
-  mnist_digits = np.concatenate([x_train2, x_test2], axis=0)
-  mnist_digits = np.expand_dims(mnist_digits, -1).astype("float32") / 255
+  # add loss to model
+  vae_loss = tf.reduce_mean(reconstruction_loss + kl_loss)
+  vae.add_loss(vae_loss)
 
-  vae = VAE(encoder, decoder)
-  vae.compile(optimizer=keras.optimizers.Adam())
-  vae.fit(mnist_digits, epochs=30, batch_size=128)
+  # Train
+  optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+  vae.compile(optimizer)
+  vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=batch_size)
+  
+  utils.plot_encoding(encoder,
+                [x_test, y_test],
+                batch_size=batch_size,
+                model_name="vae_mlp")
 
-
-  # # train the autoencoder
-  # optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-  # vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())
-  # vae.fit(x_train,x_train,
-  #     epochs = vae_epochs,
-  #     batch_size = batch_size)
-
-  # utils.plot_encoding(encoder,
-  #               [x_test, y_test],
-  #               batch_size=batch_size,
-  #               model_name="vae_mlp")
 
   encoder.trainable = False
   #encoder.compile()
 
-  vae_mlp = create_vae_mlp(input_dim, latent_dim, num_labels, encoder)
+  vae_mlp = create_vae_mlp(original_dim, latent_dim, num_labels, encoder)
   vae_mlp.compile(loss='categorical_crossentropy',
               optimizer="adam",
               metrics=['acc'])

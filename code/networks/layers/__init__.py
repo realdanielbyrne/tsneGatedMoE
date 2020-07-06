@@ -1,0 +1,1 @@
+from .vd import VarDropout, compute_log_alpha
