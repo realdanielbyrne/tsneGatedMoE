@@ -328,15 +328,13 @@ def negative_dkl(log_alpha=None):
   eltwise_dkl = term_1 + term_2 + c
   return -tf.reduce_sum(eltwise_dkl)
 
-
-
 # Settings
 original_dim = 784
-EPOCHS = 10
+EPOCHS = 20
 intermediate_dim = 512
 BATCH_SIZE = 128
 latent_dim = 2
-vae_epochs = 10
+vae_epochs = 20
 override = False
 
 if __name__ == '__main__':
@@ -374,8 +372,6 @@ if __name__ == '__main__':
   (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(categorical=True)
   input_dim = output_dim = x_train.shape[-1]
   
-
-
   if override or not os.path.isfile('models\\vae\\saved_model.pb'):
     # Define encoder model.  
     original_inputs = tf.keras.Input(shape=(original_dim,), name="encoder_input")
@@ -425,7 +421,6 @@ if __name__ == '__main__':
     vae = tf.keras.models.load_model('models\\vae')
     encoder = tf.keras.models.load_model('models\\encoder')
     decoder = tf.keras.models.load_model('models\\decoder')
-
   
 
   # gather predictions for the test batch
@@ -453,7 +448,7 @@ if __name__ == '__main__':
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=False)
   model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.01)
-  plot_model(model,to_file= 'plots\\mlp_vd.png')
+  plot_model(model,to_file= 'plots\\mlp_cgd.png')
 
 
   #model accuracy on test dataset
@@ -470,12 +465,16 @@ if __name__ == '__main__':
     
     layer_outputs = fun([x_test[:100], 1.])   
 
-    x = np.ones((layer_outputs[1].shape))*np.expand_dims(y_test[:100],1)
+    x = np.ones((layer_outputs[1].shape)) * np.expand_dims(y_test[:100],1)
     x = x*tf.random.normal(shape=(layer_outputs[1].shape),mean=1,stddev=.01)
+    y = range(100)
     y = np.ones((layer_outputs[1].shape))*y
     c = tf.nn.softmax(np.squeeze(layer_outputs[1]))*100    
-    plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
+    plt.scatter(x, y, c=c, cmap='Blues', alpha = .5)
     plt.colorbar()
+    plt.xlabel("Label Class")
+    plt.ylabel("Layer Neuron")
+    plt.savefig('dense_layer_activations_by_class2.png')
     plt.show()
 
     x = np.ones((layer_outputs[2].shape))*np.expand_dims(y_test[:100],1)
@@ -484,6 +483,9 @@ if __name__ == '__main__':
     c = tf.nn.softmax(np.squeeze(layer_outputs[2])) *100   
     plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
     plt.colorbar()
+    plt.xlabel("Label Class")
+    plt.ylabel("Layer Neuron")    
+    plt.savefig('dense_layer_activations_by_class3.png')
     plt.show()
 
 
