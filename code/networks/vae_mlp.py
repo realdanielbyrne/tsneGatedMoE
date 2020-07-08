@@ -175,7 +175,6 @@ if __name__ == '__main__':
   args = utils.parse_cmd()
   (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
   original_dim = output_dim = x_train.shape[-1]
-  
 
   # Define encoder model.
   original_inputs = tf.keras.Input(shape=(original_dim,), name="encoder_input")

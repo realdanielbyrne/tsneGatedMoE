@@ -155,18 +155,6 @@ def plot_encoding(encoder,
     plt.savefig(filename)
     plt.show()
 
-
-def plot_label_clusters(encoder, data, labels):
-    # display a 2D plot of the digit classes in the latent space
-    z_mean, _, _ = encoder.predict(data)
-    plt.figure(figsize=(12, 10))
-    plt.scatter(z_mean[:, 0], z_mean[:, 1], c=labels)
-    plt.colorbar()
-    plt.xlabel("z[0]")
-    plt.ylabel("z[1]")
-    plt.show()
-
-
 def plot_layer_activations(model,x_test,y_test):
   
   from tensorflow.keras import backend as K
@@ -258,3 +246,36 @@ def gpu_dynamic_mem_growth():
                 tf.config.experimental.set_memory_growth(gpu, True)
     except AttributeError:
         print('Upgrade your tensorflow to 2.x to have the gpu_dynamic_mem_growth feature.')
+
+
+def plot_layer_activations(model,x_test,y_test):
+
+  from tensorflow.keras import backend as K
+  model_in = model.input               # input placeholder
+  model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
+  fun = K.function([model_in], model_out) # evaluation function
+  
+  layer_outputs = fun([x_test[:100], 1.])   
+
+  x = np.ones((layer_outputs[1].shape)) * np.expand_dims(y_test[:100],1)
+  x = x*tf.random.normal(shape=(layer_outputs[1].shape),mean=1,stddev=.01)
+  y = range(100)
+  y = np.ones((layer_outputs[1].shape))*y
+  c = tf.nn.softmax(np.squeeze(layer_outputs[1]))*100    
+  plt.scatter(x, y, c=c, cmap='Blues', alpha = .5)
+  plt.colorbar()
+  plt.xlabel("Label Class")
+  plt.ylabel("Layer Neuron")
+  plt.savefig('dense_layer_activations_by_class2.png')
+  plt.show()
+
+  x = np.ones((layer_outputs[2].shape))*np.expand_dims(y_test[:100],1)
+  x = x*tf.random.normal(shape=(layer_outputs[2].shape),mean=1,stddev=.01)
+  y = np.ones((layer_outputs[2].shape))*y
+  c = tf.nn.softmax(np.squeeze(layer_outputs[2])) *100   
+  plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
+  plt.colorbar()
+  plt.xlabel("Label Class")
+  plt.ylabel("Layer Neuron")    
+  plt.savefig('dense_layer_activations_by_class3.png')
+  plt.show()

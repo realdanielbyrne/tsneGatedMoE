@@ -137,10 +137,10 @@ def create_model(
                 initial_values, 
                 num_labels, 
                 encoder, 
-                model_type = 'cgd',
+                model_type = 'stack',
                 dropout_rate = .2):
   
-
+  print('\n\n')
   if model_type == 'cgd':
     print('Building CGD Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
@@ -158,10 +158,23 @@ def create_model(
     return model
 
 
+  elif model_type == 'stack':
+    print('Building Encoder-MLP Stack')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    _, _, z = encoder(model_input)
+    x = Dense(300)(z)
+    x = Dense(100)(x)
+    x = Dense(100)(x)
+    x = Dropout(.2)(x)
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = model_type)
+    model.summary()
+    return model
+
   elif model_type == 'preencoder':
     print('Building Pre-Encoder Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    z, zm, zlv = encoder(model_input)
+    zm, zlv, z = encoder(model_input)
     z_mean = z[:,0]
     z_log_var = z[:,1]
     x = Dense(300)(model_input)
@@ -201,7 +214,7 @@ def create_model(
     model.summary()
     return model
 
-  elif model_type == 'conv_cgd':
+  elif model_type == 'conv_stack':
     print('Building CONV_CGD Model')
     model = keras.Sequential([
       keras.layers.InputLayer(input_shape=(28, 28)),
@@ -328,29 +341,43 @@ def negative_dkl(log_alpha=None):
   eltwise_dkl = term_1 + term_2 + c
   return -tf.reduce_sum(eltwise_dkl)
 
+def load_data(args):
+  if args.dataset == 'mnist':
+    return  utils.load_minst_data(args.categorical)
+  else:
+    return  utils.load_cifar10_data(args.categorical)
+
+
 # Settings
-original_dim = 784
-EPOCHS = 20
+
+EPOCHS = 50
 intermediate_dim = 512
 BATCH_SIZE = 128
-latent_dim = 2
-vae_epochs = 20
-override = False
+latent_dim = 16
+vae_epochs = 1
+override = True
 
 if __name__ == '__main__':
 
-  parser = argparse.ArgumentParser(description='Control MLP Classifier')
+  parser = argparse.ArgumentParser(description='Probability Transfer Learning Model Builder')
   parser.add_argument("-c", "--categorical",
                       default=True,
                       help="Convert class vectors to binary class matrices ( One Hot Encoding ).")
+
   parser.add_argument("-s", "--embedding_type",
                       default='mean',
                       help="embedding_type - sample: Samples a single x_test latent variable for each class\n\
                             mean: Averages all x_test latent variables")
 
   parser.add_argument("-m", "--model_type",
-                      default='cgd',
+                      default='stack',
                       help="model_type - sample: Model under test.  vae, cgd, preencoder")
+
+  parser.add_argument("-ds", "--dataset",
+                      action='store',
+                      type=str,
+                      default='cifar10',
+                      help="Use sparse, integer encoding, instead of one-hot")
 
   args = parser.parse_args()
 
@@ -359,7 +386,7 @@ if __name__ == '__main__':
   log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
   tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
   #sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch')
-
+  
 
   # Create a callback that saves the model's weights
   checkpoint_path = "training\\cp.ckpt"
@@ -369,8 +396,13 @@ if __name__ == '__main__':
                                                   verbose=0)
 
   # load data
-  (x_train, y_train), (x_test, y_test),num_labels,y_test_cat = utils.load_minst_data(categorical=True)
+  if args.dataset == 'mnist':
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_minst_data(True)
+  else:
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_cifar10_data(True)
+
   input_dim = output_dim = x_train.shape[-1]
+  original_dim = x_test.shape[-1]
   
   if override or not os.path.isfile('models\\vae\\saved_model.pb'):
     # Define encoder model.  
@@ -410,25 +442,26 @@ if __name__ == '__main__':
     vae.compile(optimizer)
     vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=BATCH_SIZE)
 
-    utils.plot_encoding(encoder,
-                  [x_test, y_test],
-                  batch_size=BATCH_SIZE,
-                  model_name="vae_mlp")
-    encoder.save('models\\encoder')
-    decoder.save('models\\decoder')
-    vae.save('models\\vae')
+    # utils.plot_encoding(encoder,
+    #               [x_test, y_test],
+    #               batch_size=BATCH_SIZE,
+    #               model_name="vae_mlp")
+    # encoder.save('models\\encoder')
+    # decoder.save('models\\decoder')
+    # vae.save('models\\vae')
   else:
     vae = tf.keras.models.load_model('models\\vae')
     encoder = tf.keras.models.load_model('models\\encoder')
     decoder = tf.keras.models.load_model('models\\decoder')
   
+  #encoder.trainable = False
 
   # gather predictions for the test batch
   predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
   initial_values = utils.get_varparams_class_means(predictions, y_test, num_labels)
 
   # create model under test
-  model = create_model(x_train, initial_values, num_labels, encoder, model_type='cgd')
+  model = create_model(x_train, initial_values, num_labels, encoder, model_type=args.model_type)
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -448,45 +481,11 @@ if __name__ == '__main__':
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=False)
   model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.01)
-  plot_model(model,to_file= 'plots\\mlp_cgd.png')
-
+  plot_model(model,to_file= 'plots\\'+str(args.model_type)+'.png')
 
   #model accuracy on test dataset
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)
-  print('\nMLP Control Model Test Loss:', score[0])
-  print("MLP Control Model Test Accuracy: %.1f%%" % (100.0 * score[1]))
-
-  def plot_layer_activations(model,x_test,y_test):
-
-    from tensorflow.keras import backend as K
-    model_in = model.input               # input placeholder
-    model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
-    fun = K.function([model_in], model_out) # evaluation function
-    
-    layer_outputs = fun([x_test[:100], 1.])   
-
-    x = np.ones((layer_outputs[1].shape)) * np.expand_dims(y_test[:100],1)
-    x = x*tf.random.normal(shape=(layer_outputs[1].shape),mean=1,stddev=.01)
-    y = range(100)
-    y = np.ones((layer_outputs[1].shape))*y
-    c = tf.nn.softmax(np.squeeze(layer_outputs[1]))*100    
-    plt.scatter(x, y, c=c, cmap='Blues', alpha = .5)
-    plt.colorbar()
-    plt.xlabel("Label Class")
-    plt.ylabel("Layer Neuron")
-    plt.savefig('dense_layer_activations_by_class2.png')
-    plt.show()
-
-    x = np.ones((layer_outputs[2].shape))*np.expand_dims(y_test[:100],1)
-    x = x*tf.random.normal(shape=(layer_outputs[2].shape),mean=1,stddev=.01)
-    y = np.ones((layer_outputs[2].shape))*y
-    c = tf.nn.softmax(np.squeeze(layer_outputs[2])) *100   
-    plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
-    plt.colorbar()
-    plt.xlabel("Label Class")
-    plt.ylabel("Layer Neuron")    
-    plt.savefig('dense_layer_activations_by_class3.png')
-    plt.show()
-
-
-  plot_layer_activations(model,x_test,y_test)
+  print(str(args.model_type) + '\nModel Test Loss:', score[0])
+  print(str(args.model_type) + "Test Accuracy: %.1f%%" % (100.0 * score[1]))
+  
+  #utils.plot_layer_activations(model,x_test,y_test)
