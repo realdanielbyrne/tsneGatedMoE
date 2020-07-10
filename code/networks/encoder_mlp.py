@@ -172,7 +172,7 @@ if __name__ == '__main__':
   if args.sparse:
       loss_ = "sparse_categorical_crossentropy"
   else:
-    loss_="categorical_crossentropy"
+      loss_="categorical_crossentropy"
 
   model.compile('adam', loss=loss_, metrics=['accuracy'])
   model.fit([x_train, x_train], [x_train,y_train], epochs=nb_epoch, batch_size=batch_size)

@@ -7,19 +7,49 @@ import argparse
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Input,Dense, Dropout, Activation, Layer, Add, Concatenate
+from tensorflow.keras.layers import Input,Dense, Dropout, Reshape
+from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
 from tensorflow.python.eager import context
+from tensorflow.keras.initializers import Initializer, TruncatedNormal, Identity, RandomNormal
 
 from tensorflow.keras.utils import plot_model
 import matplotlib.pyplot as plt
-from layers import VarDropout
+from layers import VarDropout,ProbabilityDropout
+
 import utils
 import keract
 
 EPSILON = 1e-8
+
+class Pdf(tf.keras.initializers.Initializer):
+
+  def __init__(self, mean, stddev):
+    self.mean = mean
+    self.stddev = stddev
+
+  def __call__(self, shape, dtype=None):
+    return tf.nn.softmax(tf.random.normal(
+        shape, mean=self.mean, stddev=self.stddev, dtype=dtype))
+
+  def get_config(self):  # To support serialization
+    return {'mean': self.mean, 'stddev': self.stddev}
+
+
+class Kernel(tf.keras.initializers.Initializer):
+
+  def __init__(self, mean, stddev):
+    self.mean = mean
+    self.stddev = stddev
+
+  def __call__(self, shape, dtype=None):
+    return tf.nn.softmax(tf.random.normal(
+        shape, mean=self.mean, stddev=self.stddev, dtype=dtype))
+
+  def get_config(self):  # To support serialization
+    return {'mean': self.mean, 'stddev': self.stddev}
 
 class ConstantGausianDropoutGate(Layer):
   def __init__( self,
@@ -35,7 +65,6 @@ class ConstantGausianDropoutGate(Layer):
     self.activation = activation
     self.use_bias = use_bias
     self.zero_point = zero_point
-
     initial_theta, initial_log_sigma2 = initial_values
 
     # define static lookups for pre-calculated datasets
@@ -47,124 +76,168 @@ class ConstantGausianDropoutGate(Layer):
       self.num_outputs = input_shape[-1]
 
     kernel_shape = (input_shape[-1],self.num_outputs)
-
+    
     self.kernel = self.add_weight(shape = kernel_shape,
+                            #initializer= Pdf(self.initial_theta,self.initial_log_sigma2),
                             initializer=tf.keras.initializers.RandomNormal(self.initial_theta,self.initial_log_sigma2),
-                            trainable=False)
+                            regularizer=tf.keras.regularizers.L1L2(0, 0.001),
+                            trainable=True)
+                            
     if self.use_bias:
       self.b = self.add_weight(shape = (self.num_outputs,),
-                            initializer = tf.keras.initializers.constant_initializer(self.initial_theta),
+                            initializer = tf.keras.initializers.Constant(self.initial_theta),
                             trainable = False)
     else:
       self.b = None
 
   def call(self, inputs, training = None):
-    val = tf.matmul(inputs,self.kernel)     
+    val = tf.matmul(inputs, self.kernel)     
+
+    if self.use_bias:
+      val = tf.nn.bias_add(val, self.bias)
 
     if self.activation is not None:
-      val = self.activation(val)
-    
-    # # push values that are close to zero, to zero, promotes sparse models which are more efficient
-    # condition = tf.less(val,self.zero_point)
-    # val = tf.where(condition,tf.zeros_like(val),val)
+      val = self.activation(val)  
 
     if not context.executing_eagerly():
-      # Set the static shape for the result since it might lost during array_ops
-      # reshape, eg, some `None` dim in the result could be inferred.
       val.set_shape(self.compute_output_shape(inputs.shape))
     
     return val
       
   def compute_output_shape(self, input_shape):
     return  (input_shape[0],self.num_outputs)
-  
+
+class PGD(Layer):
+  def __init__( self,
+                p,
+                num_outputs = None,
+                activation = None,
+                zero_point = 1e-2,
+                **kwargs):
+    super(PGD, self).__init__(**kwargs)
+    self.num_outputs = num_outputs
+    self.activation = activation
+    self.zero_point = zero_point
+    self.p = p
+
+  def build(self, input_shape):
+    kernel_shape = (input_shape[-1],self.num_outputs)
+    
+    p = self.p
+    num_outputs = self.num_outputs
+    s = tf.keras.activations.sigmoid(p)
+    p_range = [K.min(s),K.max(s)]
+    pfilt = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(s, p_range, nbins = num_outputs),dtype=tf.float32))
+    pfilt = tf.sigmoid(pfilt)
+    pfilt2 = tf.transpose(tf.reshape(pfilt,(-1,1)))
+    filt = tf.repeat(pfilt2,repeats =input_shape[-1], axis = 0)
+
+    self.filter = tf.Variable(filt, trainable = True)
+
+  def call(self, inputs):
+    return tf.matmul(inputs,self.filter)
 
 class DropoutLeNetBlock(Layer):
-    def __init__(self, activation = tf.keras.activations.relu, rate = .2):
-        super(DropoutLeNetBlock, self).__init__()
-        self.activation = activation
-        self.dense_1 = Dense(300, activation = activation)
-        self.dropout_1 = Dropout(rate)
-        self.dense_2 = Dense(100, activation = activation)
-        self.dropout_2 = Dropout(rate)
-        self.dense_3 = Dense(100, activation = activation)
-        self.dropout_3 = Dropout(rate)
+  def __init__(self, activation = None, rate = .2):
+      super(DropoutLeNetBlock, self).__init__()
+      self.activation = activation
+      self.dense_1 = Dense(300, activation = 'relu')
+      self.dropout_1 = Dropout(rate)
+      self.dense_2 = Dense(100, activation = activation)
+      self.dropout_2 = Dropout(rate)
+      self.dense_3 = Dense(100, activation = activation)
+      self.dropout_3 = Dropout(rate)
 
-    def call(self, inputs):
-        x = self.dense_1(inputs)
-        x = self.dropout_1(x)
-        x = self.dense_2(x)
-        x = self.dropout_2(x)
-        x = self.dense_3(x)
-        x = self.dropout_3(x)
-        return x
-
-class CGDDropoutLeNetBlock(Layer):
-    def __init__(self, initial_values,  activation = None, rate = .2):
-        super(CGDDropoutLeNetBlock, self).__init__()
-        self.activation = activation
-        self.rate = rate
-        self.dropout_1 = ConstantGausianDropoutGate(initial_values, activation = activation)
-        self.dense_2 = Dense(100, activation = activation)
-        self.dropout_2 = Dropout(rate)
-        self.dense_3 = Dense(100, activation = activation)
-        self.dropout_3 = Dropout(rate)
-
-    def call(self, inputs):
-        x = self.dropout_1(inputs)
-        x = self.dense_2(x)
-        x = self.dropout_2(x)
-        x = self.dense_3(x)
-        x = self.dropout_3(x)
-        return x
+  def call(self, inputs):
+      x = self.dense_1(inputs)
+      x = self.dropout_1(x)
+      x = self.dense_2(x)
+      x = self.dropout_2(x)
+      x = self.dense_3(x)
+      x = self.dropout_3(x)
+      return x
 
 class SamplingDropout(Layer):
     def call(self, inputs):
         logits, z_mean, z_log_var = inputs        
         z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
         z_log_var = tf.reshape(z_log_var,[tf.shape(z_log_var)[0],1])
-        epsilon = tf.random.normal(shape=tf.shape(logits))
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+        epsilon = tf.random.normal(shape=tf.shape(logits)) 
+        p =  tf.nn.softmax(z_mean + tf.exp(0.5 * z_log_var) * epsilon)
+        return p * logits
 
 class Sampling(Layer):
     def call(self, inputs):
       z_mean, z_log_var = inputs
       epsilon = tf.random.normal(shape=tf.shape(z_mean))
-      return z_mean + tf.math.exp(0.5 * z_log_var) * epsilon
+      return tf.keras.activations.elu(z_mean + tf.math.exp(0.5 * z_log_var) * epsilon)
 
 def create_model(
                 x_train, 
                 initial_values, 
                 num_labels, 
                 encoder, 
+                predictions = None,
                 model_type = 'stack',
                 dropout_rate = .2):
   
-  print('\n\n')
+  print('\n\n') 
   if model_type == 'cgd':
     print('Building CGD Model')
-    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    x = Dense(300)(model_input)
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
+    x = Dense(300)(model_input)   
+    
     y = []
-    for i in range(num_labels):
-      #y.append(CGDDropoutLeNetBlock(initial_values[i], activation = tf.nn.sigmoid)(x))      
-      y.append(ConstantGausianDropoutGate(initial_values[i], num_outputs = 100,activation = tf.nn.sigmoid)(x))
+    for i in range(num_labels):  
+      y.append(ConstantGausianDropoutGate(initial_values[i], num_outputs = 300, activation = tf.nn.relu)(model_input))
+
     x = Concatenate()(y)
-    x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001),name='dense2')(x)
-    x = Dense(100,kernel_regularizer=tf.keras.regularizers.l2(0.001),name='dense3')(x)
+    x = Dense(200,  activation = tf.nn.relu, name='dense2')(x)
+    x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
     return model
 
+  elif model_type == 'pdf':
+    print('Building Encoder-Softmax Stack')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    _1, _2, x = encoder(model_input)
+    #x = Concatenate()([_1,_2,x])
+    x = Softmax()(x)
+    x = Dense(300,  activation = tf.nn.relu, name='dense1')(x)
+    x = Dense(100,  activation = tf.nn.relu, name='dense2')(x)
+    x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = model_type)
+    model.summary()
+    return model
+
+  elif model_type == 'pd':
+    print('Building Probability Dropout MLP Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    
+    x = Dense(300,activation = tf.nn.relu, name='dense1')(model_input)
+    x = PGD(predictions, 300)(x)
+    x = Dense(100,activation = tf.nn.relu, name='dense2')(x)
+    x = PGD(predictions, 100)(x)
+    x = Dense(100,activation = tf.nn.relu, name='dense3')(x)
+    x = PGD(predictions, 100)(x)
+    d = Dropout(dropout_rate)
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = model_type)
+    model.summary()
+    return model
 
   elif model_type == 'stack':
     print('Building Encoder-MLP Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     _, _, z = encoder(model_input)
-    x = Dense(300)(z)
-    x = Dense(100)(x)
-    x = Dense(100)(x)
+    x = Dense(300,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(z)
+    x = Dense(100,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    #x = Add()([x,z])
+    x = Dense(100,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    #x = Add()([x,z])
     x = Dropout(.2)(x)
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
@@ -174,14 +247,14 @@ def create_model(
   elif model_type == 'preencoder':
     print('Building Pre-Encoder Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    zm, zlv, z = encoder(model_input)
+    _, _, z = encoder(model_input)
     z_mean = z[:,0]
     z_log_var = z[:,1]
-    x = Dense(300)(model_input)
+    x = Dense(300,activation = 'relu')(model_input)
     x = SamplingDropout()([x,z[:,0],z[:,1]])
-    x = Dense(100)(x)
+    x = Dense(100,activation = 'relu')(x)
     x = SamplingDropout()([x,z[:,0],z[:,1]])
-    x = Dense(100)(x)
+    x = Dense(100,activation = 'relu')(x)
     
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
@@ -190,27 +263,27 @@ def create_model(
   
   elif model_type == 'vae':   
     print('Building VAE Filter Model') 
-    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    vae_out = decoder(encoder(model_input)[2])    
-    x = Dense(300)(model_input)
-    x = Dense(100)(x)
-    x = Dense(100)(x)
+    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    x = decoder(encoder(i)[2])    
+    x = Dense(300,activation = 'relu')(x)
+    x = Dense(100,activation = 'relu')(x)
+    x = Dense(100,activation = 'relu')(x)
     x = Dropout(.2)(x)
+    model = Model(i, x, name = model_type)
     model.summary()
     return model
 
   elif model_type == 'conv':
     print('Building Reference CONV Model')
-    model = keras.Sequential([
-      keras.layers.InputLayer(input_shape=(28, 28)),
-      keras.layers.Reshape(target_shape=(28, 28, 1)),
-      keras.layers.Conv2D(filters=num_labels, kernel_size=(3, 3), activation='relu',),
-      keras.layers.MaxPooling2D(pool_size=(2, 2)),
-      keras.layers.Flatten(),
-      keras.layers.Dense(10)
-    ])
-    model_out = Dense(num_labels, name=model_type)(x)
-    model = Model(model_input, model_out, name = model_type)
+    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    _, _, z = encoder(i)
+    x = Reshape(target_shape=(28, 28, 1))(i)
+    x = Conv2D(filters=num_labels, kernel_size=(3, 3), activation='relu')(x)
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Flatten()(x)
+    x = Dense(10)(x)
+    
+    model = Model(i, x, name = model_type)
     model.summary()
     return model
 
@@ -238,124 +311,15 @@ def create_model(
     model.summary()
     return model
 
-
-def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
-  # Keep results for plotting
-  train_loss_results = []
-  train_accuracy_results = []
-
-  # Instantiate an optimizer.
-  epoch_loss_avg = tf.keras.metrics.Mean()
-  epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
-  val_accuracy = tf.keras.metrics.CategoricalAccuracy()
-
-  # Prepare the validation dataset.
-  # Reserve 5,000 samples for validation.
-  x_val = x_train[-3000:]
-  y_val = y_train[-3000:]
-  x_train = x_train[:-3000]
-  y_train = y_train[:-3000]
-  val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
-  val_dataset = val_dataset.batch(BATCH_SIZE)
-
-  # prepare data  
-  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
-
-  @tf.function
-  def train_step(x, y):
-    with tf.GradientTape() as tape:
-      logits = model(x_batch_train, training=True)  # Logits for this minibatch
-
-      # Compute the loss value for this minibatch.
-      loss_value = loss_fn(y_batch_train, logits)
-
-      # # Add kld layer losses created during this forward pass:
-      # log_alphas,dkl_fraction = vd_loss(model)
-      # dkl_loss = tf.add_n([negative_dkl(log_alpha=a) for a in log_alphas])
-
-      # regularizer intensifies over the course of ramp-up
-      # tf.summary.scalar('dkl_fraction', dkl_fraction)
-      # tf.summary.scalar('dkl_loss_gross',dkl_loss )
-      # dkl_loss = dkl_loss * dkl_fraction
-
-      
-      dkl_loss =  sum(model.losses) 
-      tf.summary.scalar('dkl_loss_net',dkl_loss)
-      #dkl_loss = dkl_loss / float(x_train.shape[0])
-      loss_value += dkl_loss
-      
-      # Retrievethe gradients of the trainable variables with respect to the loss.
-      grads = tape.gradient(loss_value, model.trainable_weights)
-      # Minimize the loss.
-      optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
-      # Update training metrics
-      epoch_loss_avg.update_state(loss_value) 
-      epoch_accuracy.update_state(y_batch_train,logits)
-    return loss_value
-
-  @tf.function
-  def test_step(x, y):
-      val_logits = model(x, training=False)
-      val_accuracy.update_state(y, val_logits)
-
-  for epoch in range(EPOCHS):
-    print("\nStart of epoch %d" % (epoch,))
-    
-    # Iterate over the batches of the dataset.
-    for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
-
-      # Run the forward pass.
-      loss_value = train_step(x_batch_train, y_batch_train)
-
-    # Display metrics at the end of each epoch.
-    print("Training acc over epoch: %.4f" % (float(epoch_accuracy.result()),))
-    print("Training loss over epoch: %.4f" % (float(epoch_loss_avg.result()),))
-
-    # Reset training metrics at the end of each epoch
-    epoch_accuracy.reset_states()      
-    epoch_loss_avg.reset_states()
-
-    # Run a validation loop at the end of each epoch.
-    for x_batch_val, y_batch_val in val_dataset:
-        test_step(x_batch_val, y_batch_val)
-    val_acc = val_accuracy.result()
-    val_accuracy.reset_states()
-    print("Validation acc: %.4f" % (float(val_acc),))
-
-
-  test_step(x_test, y_test)
-  val_acc = val_accuracy.result()
-  val_accuracy.reset_states()
-  print("Test acc: %.4f" % (float(val_acc),))
-
-
-def negative_dkl(log_alpha=None):
-  # Constant values for approximating the kl divergence
-  k1, k2, k3 = 0.63576, 1.8732, 1.48695
-  c = -k1
-  # Compute each term of the KL and combine
-  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.math.log1p(tf.math.exp(tf.math.negative(log_alpha)))
-  eltwise_dkl = term_1 + term_2 + c
-  return -tf.reduce_sum(eltwise_dkl)
-
-def load_data(args):
-  if args.dataset == 'mnist':
-    return  utils.load_minst_data(args.categorical)
-  else:
-    return  utils.load_cifar10_data(args.categorical)
-
-
 # Settings
 
-EPOCHS = 50
+EPOCHS = 100
 intermediate_dim = 512
 BATCH_SIZE = 128
-latent_dim = 16
-vae_epochs = 1
-override = True
+latent_dim = 9
+vae_epochs = 20
+override = False
+model_type = 'pd'
 
 if __name__ == '__main__':
 
@@ -370,13 +334,13 @@ if __name__ == '__main__':
                             mean: Averages all x_test latent variables")
 
   parser.add_argument("-m", "--model_type",
-                      default='stack',
-                      help="model_type - sample: Model under test.  vae, cgd, preencoder")
+                      default='vae',
+                      help="model_type - sample: Model under test. vae, cgd, preencoder")
 
   parser.add_argument("-ds", "--dataset",
                       action='store',
                       type=str,
-                      default='cifar10',
+                      default='mnist',
                       help="Use sparse, integer encoding, instead of one-hot")
 
   args = parser.parse_args()
@@ -442,13 +406,13 @@ if __name__ == '__main__':
     vae.compile(optimizer)
     vae.fit(x_train, x_train, epochs=vae_epochs, batch_size=BATCH_SIZE)
 
-    # utils.plot_encoding(encoder,
-    #               [x_test, y_test],
-    #               batch_size=BATCH_SIZE,
-    #               model_name="vae_mlp")
-    # encoder.save('models\\encoder')
-    # decoder.save('models\\decoder')
-    # vae.save('models\\vae')
+    utils.plot_encoding(encoder,
+                  [x_test, y_test],
+                  batch_size=BATCH_SIZE,
+                  model_name="vae_mlp")
+    encoder.save('models\\encoder')
+    decoder.save('models\\decoder')
+    vae.save('models\\vae')
   else:
     vae = tf.keras.models.load_model('models\\vae')
     encoder = tf.keras.models.load_model('models\\encoder')
@@ -457,11 +421,14 @@ if __name__ == '__main__':
   #encoder.trainable = False
 
   # gather predictions for the test batch
-  predictions, _, _ = encoder.predict(x_test, batch_size=BATCH_SIZE) 
+  _, _, predictions = encoder.predict(x_test, batch_size=BATCH_SIZE) 
+  
   initial_values = utils.get_varparams_class_means(predictions, y_test, num_labels)
+  p = tf.stack(predictions)
 
   # create model under test
-  model = create_model(x_train, initial_values, num_labels, encoder, model_type=args.model_type)
+  model = create_model(x_train, initial_values, num_labels, encoder, predictions, model_type )
+  
   
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -471,7 +438,7 @@ if __name__ == '__main__':
     0.001,
     decay_steps=STEPS_PER_EPOCH*100,
     decay_rate=1,
-    staircase=True)
+    staircase=False)
 
   optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
   # Train

@@ -25,6 +25,106 @@ def sparseness(log_alphas, thresh=3):
         N_active += n_active
         N_total += n_total
     return 1.0 - N_active/N_total
+def negative_dkl(log_alpha=None):
+  # Constant values for approximating the kl divergence
+  k1, k2, k3 = 0.63576, 1.8732, 1.48695
+  c = -k1
+  # Compute each term of the KL and combine
+  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
+  term_2 = -0.5 * tf.math.log1p(tf.math.exp(tf.math.negative(log_alpha)))
+  eltwise_dkl = term_1 + term_2 + c
+  return -tf.reduce_sum(eltwise_dkl)
+
+def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
+  # Keep results for plotting
+  train_loss_results = []
+  train_accuracy_results = []
+
+  # Instantiate an optimizer.
+  epoch_loss_avg = tf.keras.metrics.Mean()
+  epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
+  val_accuracy = tf.keras.metrics.CategoricalAccuracy()
+
+  # Prepare the validation dataset.
+  # Reserve 5,000 samples for validation.
+  x_val = x_train[-3000:]
+  y_val = y_train[-3000:]
+  x_train = x_train[:-3000]
+  y_train = y_train[:-3000]
+  val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+  val_dataset = val_dataset.batch(BATCH_SIZE)
+
+  # prepare data  
+  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+  train_dataset = train_dataset.shuffle(buffer_size=1024).batch(BATCH_SIZE)
+
+  @tf.function
+  def train_step(x, y):
+    with tf.GradientTape() as tape:
+      logits = model(x_batch_train, training=True)  # Logits for this minibatch
+
+      # Compute the loss value for this minibatch.
+      loss_value = loss_fn(y_batch_train, logits)
+
+      # # Add kld layer losses created during this forward pass:
+      # log_alphas,dkl_fraction = vd_loss(model)
+      # dkl_loss = tf.add_n([negative_dkl(log_alpha=a) for a in log_alphas])
+
+      # regularizer intensifies over the course of ramp-up
+      # tf.summary.scalar('dkl_fraction', dkl_fraction)
+      # tf.summary.scalar('dkl_loss_gross',dkl_loss )
+      # dkl_loss = dkl_loss * dkl_fraction
+
+      
+      dkl_loss =  sum(model.losses) 
+      tf.summary.scalar('dkl_loss_net',dkl_loss)
+      #dkl_loss = dkl_loss / float(x_train.shape[0])
+      loss_value += dkl_loss
+      
+      # Retrievethe gradients of the trainable variables with respect to the loss.
+      grads = tape.gradient(loss_value, model.trainable_weights)
+      # Minimize the loss.
+      optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+      # Update training metrics
+      epoch_loss_avg.update_state(loss_value) 
+      epoch_accuracy.update_state(y_batch_train,logits)
+    return loss_value
+
+  @tf.function
+  def test_step(x, y):
+      val_logits = model(x, training=False)
+      val_accuracy.update_state(y, val_logits)
+
+  for epoch in range(EPOCHS):
+    print("\nStart of epoch %d" % (epoch,))
+    
+    # Iterate over the batches of the dataset.
+    for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
+
+      # Run the forward pass.
+      loss_value = train_step(x_batch_train, y_batch_train)
+
+    # Display metrics at the end of each epoch.
+    print("Training acc over epoch: %.4f" % (float(epoch_accuracy.result()),))
+    print("Training loss over epoch: %.4f" % (float(epoch_loss_avg.result()),))
+
+    # Reset training metrics at the end of each epoch
+    epoch_accuracy.reset_states()      
+    epoch_loss_avg.reset_states()
+
+    # Run a validation loop at the end of each epoch.
+    for x_batch_val, y_batch_val in val_dataset:
+        test_step(x_batch_val, y_batch_val)
+    val_acc = val_accuracy.result()
+    val_accuracy.reset_states()
+    print("Validation acc: %.4f" % (float(val_acc),))
+
+  test_step(x_test, y_test)
+  val_acc = val_accuracy.result()
+  val_accuracy.reset_states()
+  print("Test acc: %.4f" % (float(val_acc),))
+
 
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
@@ -43,49 +143,20 @@ def get_varparams_class_samples(predictions, y_test, num_labels):
 def get_varparams_class_means(predictions, y_test, num_labels):
   initial_thetas = []
   initial_log_sigma2s = []
-  
+  x = 0
   for x in range(num_labels):
     targets = predictions[np.where(y_test == x)[0]]
-    means = np.mean(targets, axis = 0)
+    targets = tf.stack(targets)
+    means = np.mean(targets, axis = 0)    
     initial_thetas.append(means[0])
     initial_log_sigma2s.append(means[1])
 
   initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
   return initial_values
 
-def vd_loss(model):
-  log_alphas = []
-  fraction = 0.
-  theta_logsigma2 = [layer.variables for layer in model.layers if 'var_dropout' in layer.name]
-  for theta, log_sigma2, step in theta_logsigma2:
-    log_alphas.append(compute_log_alpha(theta, log_sigma2))
-    fraction = tf.minimum(tf.maximum(fraction,step),1.)
-  return log_alphas, fraction
-
-@tf.function
-def compute_log_alpha(theta, log_sigma2):
-  return log_sigma2 - tf.math.log(tf.square(theta) + EPSILON)
-
-def parse_cmd(description = 'AE Embedding Classifier'):
-  parser = argparse.ArgumentParser(description=description)
-  parser.add_argument("-c", "--categorical",
-                      default=True,
-                      help="Convert class vectors to binary class matrices ( One Hot Encoding ).")
-
-
-  parser.add_argument("-ds", "--dataset",
-                      action='store',
-                      type=str,
-                      default='mnist',
-                      help="Use sparse, integer encoding, instead of one-hot")
-                  
-
-
-  args = parser.parse_args()
-  return args
 
 def load_minst_data(categorical):
-      # load mnist dataset
+  # load mnist dataset
   (x_train, y_train), (x_test, y_test) = mnist.load_data()
     
   # compute the number of labels
@@ -278,4 +349,49 @@ def plot_layer_activations(model,x_test,y_test):
   plt.xlabel("Label Class")
   plt.ylabel("Layer Neuron")    
   plt.savefig('dense_layer_activations_by_class3.png')
+  plt.show()
+
+
+def hinton(matrix, max_weight=None, ax=None):
+    """Draw Hinton diagram for visualizing a weight matrix."""
+    ax = ax if ax is not None else plt.gca()
+
+    if not max_weight:
+        max_weight = 2 ** np.ceil(np.log(np.abs(matrix).max()) / np.log(2))
+
+    ax.patch.set_facecolor('gray')
+    ax.set_aspect('equal', 'box')
+    ax.xaxis.set_major_locator(plt.NullLocator())
+    ax.yaxis.set_major_locator(plt.NullLocator())
+
+    for (x, y), w in np.ndenumerate(matrix):
+        color = 'white' if w > 0 else 'black'
+        size = np.sqrt(np.abs(w) / max_weight)
+        rect = plt.Rectangle([x - size / 2, y - size / 2], size, size,
+                             facecolor=color, edgecolor=color)
+        ax.add_patch(rect)
+
+    ax.autoscale_view()
+    ax.invert_yaxis()
+
+def visualize_mlp(model):
+  fig, axes = plt.subplots(4, 4)
+  vmin, vmax = mlp.coefs_[0].min(), mlp.coefs_[0].max()
+
+  for coef, ax in zip(mlp.coefs_[0].T, axes.ravel()):
+      ax.matshow(coef.reshape(28, 28), cmap=plt.cm.gray, vmin=.5 * vmin, vmax=.5 * vmax)
+      ax.set_xticks(())
+      ax.set_yticks(())
+
+  plt.show()
+
+def visualize_mlp_tf(model):
+  fig, axes = plt.subplots(4, 4)
+  vmin, vmax = mlp.coefs_[0].min(), mlp.coefs_[0].max()
+
+  for coef, ax in zip(mlp.coefs_[0].T, axes.ravel()):
+      ax.matshow(coef.reshape(28, 28), cmap=plt.cm.gray, vmin=.5 * vmin, vmax=.5 * vmax)
+      ax.set_xticks(())
+      ax.set_yticks(())
+
   plt.show()
