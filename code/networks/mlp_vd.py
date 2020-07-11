@@ -31,8 +31,8 @@ class Pdf(tf.keras.initializers.Initializer):
     self.stddev = stddev
 
   def __call__(self, shape, dtype=None):
-    return tf.nn.softmax(tf.random.normal(
-        shape, mean=self.mean, stddev=self.stddev, dtype=dtype))
+    return tf.random.normal(
+        shape, mean=self.mean, stddev=self.stddev, dtype=dtype)
 
   def get_config(self):  # To support serialization
     return {'mean': self.mean, 'stddev': self.stddev}
@@ -51,7 +51,7 @@ class Kernel(tf.keras.initializers.Initializer):
   def get_config(self):  # To support serialization
     return {'mean': self.mean, 'stddev': self.stddev}
 
-class ConstantGausianDropoutGate(Layer):
+class CGD(Layer):
   def __init__( self,
                 initial_values,
                 num_outputs = None,
@@ -60,7 +60,7 @@ class ConstantGausianDropoutGate(Layer):
                 zero_point = 1e-2,
                 **kwargs):
 
-    super(ConstantGausianDropoutGate, self).__init__(**kwargs)
+    super(CGD, self).__init__(**kwargs)
     self.num_outputs = num_outputs
     self.activation = activation
     self.use_bias = use_bias
@@ -156,7 +156,7 @@ class DropoutLeNetBlock(Layer):
       x = self.dropout_3(x)
       return x
 
-class SamplingDropout(Layer):
+class SD(Layer):
     def call(self, inputs):
         logits, z_mean, z_log_var = inputs        
         z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
@@ -189,7 +189,24 @@ def create_model(
     
     y = []
     for i in range(num_labels):  
-      y.append(ConstantGausianDropoutGate(initial_values[i], num_outputs = 300, activation = tf.nn.relu)(model_input))
+      y.append(CGD(initial_values[i], num_outputs = 300, activation = tf.nn.relu)(model_input))
+
+    x = Concatenate()(y)
+    x = Dense(200,  activation = tf.nn.relu, name='dense2')(x)
+    x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = model_type)
+    model.summary()
+    return model
+
+  if model_type == 'gatedmoe':
+    print('Building gatedmoe Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
+    _, _, x = encoder(model_input)
+    
+    y = []
+    for i in range(num_labels):  
+      y.append(CGD(initial_values[i], num_outputs = 300, activation = tf.nn.relu)(model_input))
 
     x = Concatenate()(y)
     x = Dense(200,  activation = tf.nn.relu, name='dense2')(x)
@@ -234,35 +251,33 @@ def create_model(
     _,_, z = encoder(model_input)
     z_mean = z[:,0]
     z_log_var = z[:,1]
-    x = Dense(300,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(z)
-    x = Dense(100,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(x)
-    #x = Add()([x,z])
-    x = Dense(100,activation = 'relu',activity_regularizer=tf.keras.regularizers.l2(0.01))(x)
-    #x = Add()([x,z])
+    x = Dense(300,activation = 'relu')(z)
+    x = Dense(100,activation = 'relu')(x)
+    x = Dense(100,activation = 'relu')(x)
     x = Dropout(.2)(x)
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
 
-    # kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
-    # kl_loss = tf.reduce_sum(kl_loss, axis=-1)
-    # kl_loss *= -0.5
+    kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+    kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+    kl_loss *= -0.5
 
     # add loss to model
     #model_loss = tf.reduce_mean(loss_fn + kl_loss)
-    # model.add_loss(kl_loss)
+    model.add_loss(kl_loss)
     return model
 
-  elif model_type == 'sampling':
+  elif model_type == 'sampling_dropout':
     print('Building Pre-Encoder Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     _, _, z = encoder(model_input)
     z_mean = z[:,0]
     z_log_var = z[:,1]
     x = Dense(300,activation = 'relu')(model_input)
-    x = SamplingDropout()([x,z[:,0],z[:,1]])
+    x = SD()([x,z[:,0],z[:,1]])
     x = Dense(100,activation = 'relu')(x)
-    x = SamplingDropout()([x,z[:,0],z[:,1]])
+    x = SD()([x,z[:,0],z[:,1]])
     x = Dense(100,activation = 'relu')(x)
     
     model_out = Dense(num_labels, name=model_type)(x)
@@ -428,7 +443,7 @@ BATCH_SIZE = 128
 latent_dim = 2
 vae_epochs = 20
 override = False
-model_type = 'stack'
+model_type = 'sampling_dropout'
 
 if __name__ == '__main__':
 
@@ -554,12 +569,13 @@ if __name__ == '__main__':
   
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=True)
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.01)
-  plot_model(model,to_file= 'plots\\'+str(args.model_type)+'.png')
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.001)
+  
 
   #model accuracy on test dataset
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)
   print(str(args.model_type) + '\nModel Test Loss:', score[0])
   print(str(args.model_type) + "Test Accuracy: %.1f%%" % (100.0 * score[1]))
-  
+  plot_model(model,to_file= 'plots\\'+str(args.model_type)+'.png')
+  utils.
   #utils.plot_layer_activations(model,x_test,y_test)
