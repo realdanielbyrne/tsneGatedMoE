@@ -17,8 +17,7 @@ from tensorflow.keras.initializers import Initializer, TruncatedNormal, Identity
 
 from tensorflow.keras.utils import plot_model
 import matplotlib.pyplot as plt
-from layers import VarDropout,ProbabilityDropout
-
+from layers import VarDropout, ProbabilityDropout
 import utils
 import keract
 
@@ -158,17 +157,23 @@ class DropoutLeNetBlock(Layer):
 
 class SD(Layer):
     def call(self, inputs):
-        logits, z_mean, z_log_var = inputs        
-        z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
-        z_log_var = tf.reshape(z_log_var,[tf.shape(z_log_var)[0],1])
-        epsilon = tf.random.normal(shape=tf.shape(logits)) 
-        p =  tf.nn.softmax(z_mean + tf.exp(0.5 * z_log_var) * epsilon)
-        return p * logits
+      logits, z_mean, z_log_var = inputs        
+      z_mean = tf.reshape(z_mean,[tf.shape(z_mean)[0],1])
+      z_log_var = tf.reshape(z_log_var,[tf.shape(z_log_var)[0],1])
+      epsilon = tf.random.normal(shape=tf.shape(logits)) 
+      p =  tf.nn.softmax(z_mean + tf.exp(0.5 * z_log_var) * epsilon)
+      return p * logits
 
 class Sampling(Layer):
     def call(self, inputs):
       z_mean, z_log_var = inputs
-      epsilon = tf.random.normal(shape=tf.shape(z_mean))
+      epsilon = tf.random.normal(shape = tf.shape(z_mean))
+      return tf.keras.activations.elu(z_mean + tf.math.exp(0.5 * z_log_var) * epsilon)
+
+class Sampling2(Layer):
+    def call(self, inputs):
+      z_mean, z_log_var = inputs
+      epsilon = tf.random.normal(shape = tf.shape(z_mean))      
       return tf.keras.activations.elu(z_mean + tf.math.exp(0.5 * z_log_var) * epsilon)
 
 def create_model(
@@ -194,12 +199,13 @@ def create_model(
     x = Concatenate()(y)
     x = Dense(200,  activation = tf.nn.relu, name='dense2')(x)
     x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
+
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
     return model
 
-  if model_type == 'gatedmoe':
+  elif model_type == 'gatedmoe':
     print('Building gatedmoe Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
     _, _, x = encoder(model_input)
@@ -211,7 +217,20 @@ def create_model(
     x = Concatenate()(y)
     x = Dense(200,  activation = tf.nn.relu, name='dense2')(x)
     x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
+
     model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = model_type)
+    model.summary()
+    return model
+
+  elif model_type == 'vd_ref':
+    print('Building gatedmoe Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
+    x = VarDropout(300)(model_input)
+    x = VarDropout(100)(x)
+    x = VarDropout(100)(x)
+
+    model_out = Dense(num_labels, name = model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
     return model
@@ -219,11 +238,12 @@ def create_model(
   elif model_type == 'pdf':
     print('Building Encoder-Softmax Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _1, _2, x = encoder(model_input)
-    #x = Concatenate()([_1,_2,x])
+    
+    _, _, x = encoder(model_input)
     x = Dense(300,  activation = tf.nn.relu, name='dense1')(x)
     x = Dense(100,  activation = tf.nn.relu, name='dense2')(x)
     x = Dense(100,  activation = tf.nn.relu, name='dense3')(x)
+
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
@@ -240,6 +260,7 @@ def create_model(
     x = Dense(100,activation = tf.nn.relu, name='dense3')(x)
     x = PGD(predictions, 100)(x)
     d = Dropout(dropout_rate)
+
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
@@ -264,7 +285,7 @@ def create_model(
     kl_loss *= -0.5
 
     # add loss to model
-    #model_loss = tf.reduce_mean(loss_fn + kl_loss)
+    # model_loss = tf.reduce_mean(loss_fn + kl_loss)
     model.add_loss(kl_loss)
     return model
 
@@ -301,6 +322,7 @@ def create_model(
     x = Dense(100,activation = 'relu')(x)
     x = Dense(100,activation = 'relu')(x)
     x = Dropout(.2)(x)
+
     model = Model(i, x, name = model_type)
     model.summary()
     return model
@@ -309,8 +331,8 @@ def create_model(
     print('Building Reference CONV Model')
     i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     _, _, z = encoder(i)
-    x = Reshape(target_shape=(28, 28, 1))(i)
-    x = Conv2D(filters=num_labels, kernel_size=(3, 3), activation='relu')(x)
+    x = Reshape(target_shape = (28, 28, 1))(i)
+    x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
     x = MaxPooling2D(pool_size=(2, 2))(x)
     x = Flatten()(x)
     x = Dense(10)(x)
@@ -329,6 +351,7 @@ def create_model(
     x = keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
     x = keras.layers.Flatten()(x)
     x = keras.layers.Dense(10)
+
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
@@ -338,6 +361,7 @@ def create_model(
     print('Building Reference Lenet300_100_100 Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
+
     model_out = Dense(num_labels, name=model_type)(x)
     model = Model(model_input, model_out, name = model_type)
     model.summary()
@@ -443,7 +467,7 @@ BATCH_SIZE = 128
 latent_dim = 2
 vae_epochs = 20
 override = False
-model_type = 'sampling_dropout'
+model_type = 'vd_ref'
 
 if __name__ == '__main__':
 
@@ -457,15 +481,11 @@ if __name__ == '__main__':
                       help="embedding_type - sample: Samples a single x_test latent variable for each class\n\
                             mean: Averages all x_test latent variables")
 
-  parser.add_argument("-m", "--model_type",
-                      default='vae',
-                      help="model_type - sample: Model under test. vae, cgd, preencoder")
-
   parser.add_argument("-ds", "--dataset",
                       action='store',
                       type=str,
                       default='mnist',
-                      help="Use sparse, integer encoding, instead of one-hot")
+                      help="Dataset: mnist or cifar10.")
 
   args = parser.parse_args()
 
@@ -569,13 +589,12 @@ if __name__ == '__main__':
   
   # use graph training for speed
   model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=True)
-  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.001)
+  model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.01)
   
 
   #model accuracy on test dataset
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)
-  print(str(args.model_type) + '\nModel Test Loss:', score[0])
-  print(str(args.model_type) + "Test Accuracy: %.1f%%" % (100.0 * score[1]))
-  plot_model(model,to_file= 'plots\\'+str(args.model_type)+'.png')
-  utils.
+  print(str(model_type) + '\nModel Test Loss:', score[0])
+  print(str(model_type) + "Test Accuracy: %.1f%%" % (100.0 * score[1]))
+  plot_model(model,to_file= 'plots\\'+str(model_type)+'.png')
   #utils.plot_layer_activations(model,x_test,y_test)

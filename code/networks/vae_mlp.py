@@ -66,7 +66,6 @@ class  ProbabilityDropout(layers.Layer):
 
       probs = tf.map_fn(dropprob, z)
 
-
       # push values that are close to zero, to zero, promotes sparse models which are more efficient
       condition = tf.less(probs,self.zero_point)
       probs = tf.where(condition,tf.zeros_like(probs),probs)

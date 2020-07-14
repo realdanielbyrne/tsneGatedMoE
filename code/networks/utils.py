@@ -261,7 +261,6 @@ def plot_layer_activations(model,x_test,y_test):
   plt.savefig('dense_layer_activations_by_class3.png')
   plt.show()
 
-
 def hinton(matrix, max_weight=None, ax=None):
     """Draw Hinton diagram for visualizing a weight matrix."""
     ax = ax if ax is not None else plt.gca()

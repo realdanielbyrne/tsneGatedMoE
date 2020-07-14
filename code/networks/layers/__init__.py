@@ -1,2 +1,2 @@
-from .vd import VarDropout, compute_log_alpha
+from .vd import VarDropout
 from .pd import ProbabilityDropout
