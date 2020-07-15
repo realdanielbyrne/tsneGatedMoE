@@ -168,7 +168,7 @@ class Sampling(Layer):
     def call(self, inputs):
       z_mean, z_log_var = inputs
       epsilon = tf.random.normal(shape = tf.shape(z_mean))
-      return tf.keras.activations.elu(z_mean + tf.math.exp(0.5 * z_log_var) * epsilon)
+      return z_mean + tf.math.exp(0.5 * z_log_var) * epsilon
 
 class Sampling2(Layer):
     def call(self, inputs):
@@ -227,8 +227,8 @@ def create_model(
     print('Building gatedmoe Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
     x = VarDropout(300)(model_input)
-    x = VarDropout(100)(x)
-    x = VarDropout(100)(x)
+    x = VarDropout(300)(x)
+    x = VarDropout(300)(x)
 
     model_out = Dense(num_labels, name = model_type)(x)
     model = Model(model_input, model_out, name = model_type)
@@ -463,7 +463,7 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
 # Settings
 EPOCHS = 100
 intermediate_dim = 512
-BATCH_SIZE = 128
+BATCH_SIZE = 100
 latent_dim = 2
 vae_epochs = 20
 override = False
@@ -574,24 +574,15 @@ if __name__ == '__main__':
   # create model under test
   model = create_model(x_train, initial_values, num_labels, encoder, loss_fn, predictions, model_type )  
   metrics = [keras.metrics.CategoricalAccuracy()]
-
-  STEPS_PER_EPOCH = x_train.shape[0]//BATCH_SIZE
-  lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    0.001,
-    decay_steps=STEPS_PER_EPOCH*100,
-    decay_rate=.97,
-    staircase=False)
-
-  optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+  optimizer = tf.keras.optimizers.Adam()
   # Train
   # use custom training loop to assist in debugging
   #custom_train(model, x_train, y_train, optimizer, x_test, y_test, loss_fn)
   
   # use graph training for speed
-  model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=True)
+  model.compile(optimizer,loss = loss_fn, metrics=['accuracy'],experimental_run_tf_function=False)
   model.fit(x_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE,callbacks=[tensorboard_cb], validation_split=.01)
   
-
   #model accuracy on test dataset
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)
   print(str(model_type) + '\nModel Test Loss:', score[0])
