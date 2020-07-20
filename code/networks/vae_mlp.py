@@ -15,6 +15,7 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras import backend as K
 from tensorflow.keras import losses 
 import utils
+from datetime import datetime
 
 def load_data(args):
   if args.dataset == 'mnist':
@@ -129,50 +130,31 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
   x = ProbabilityDropout()([z_mean,z_var,x])
   x = layers.Dense(mlp_hidden_dim, activation='elu')(x)
   x = ProbabilityDropout()([z_mean,z_var,x])
-  out = layers.Dense(num_labels, activation="softmax")(x)
+  out = layers.Dense(num_labels)(x)
+  
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
-  #vae_mlp.summary()
+  vae_mlp.summary()
+
   return vae_mlp
   
-class VAE(Model):
-    def __init__(self, encoder, decoder, **kwargs):
-        super(VAE, self).__init__(**kwargs)
-        self.encoder = encoder
-        self.decoder = decoder
-
-    def train_step(self, data):
-        if isinstance(data, tuple):
-            data = data[0]
-        with tf.GradientTape() as tape:
-            z_mean, z_log_var, z = encoder(data)
-            reconstruction = decoder(z)
-            reconstruction_loss = tf.reduce_mean(
-                keras.losses.binary_crossentropy(data, reconstruction)
-            )
-            reconstruction_loss *= 28 * 28
-            kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
-            kl_loss = tf.reduce_mean(kl_loss)
-            kl_loss *= -0.5
-            total_loss = reconstruction_loss + kl_loss
-        grads = tape.gradient(total_loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
-        return {
-            "loss": total_loss,
-            "reconstruction_loss": reconstruction_loss,
-            "kl_loss": kl_loss,
-        }
-
+intermediate_dim = 512
+mlp_hidden_dim = 512
+batch_size = 128
+latent_dim = 2
+vae_epochs = 10
+epochs = 10
+dataset = 'mnist'
+fix_encoder = False
+log_dir = "logs\\fit\\" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
 if __name__ == '__main__':
 
-  intermediate_dim = 512
-  mlp_hidden_dim = 512
-  batch_size = 128
-  latent_dim = 2
-  vae_epochs = 10
-  epochs = 30
-  args = utils.parse_cmd()
-  (x_train, y_train), (x_test, y_test), num_labels, y_test_cat  = load_data(args)
+  # load data
+  if dataset == 'mnist':
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_minst_data(True)
+  else:
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_cifar10_data(True)
+
   original_dim = output_dim = x_train.shape[-1]
 
   # Define encoder model.
@@ -217,14 +199,24 @@ if __name__ == '__main__':
                 batch_size=batch_size,
                 model_name="vae_mlp")
 
-
-  encoder.trainable = False
-  #encoder.compile()
-
+  if fix_encoder:
+    encoder.trainable = False
+  
   vae_mlp = create_vae_mlp(original_dim, latent_dim, num_labels, encoder)
-  vae_mlp.compile(loss='categorical_crossentropy',
+  vae_mlp.add_loss(vae_loss)
+
+  loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
+  vae_mlp.compile(loss=loss_fn,
               optimizer="adam",
               metrics=['acc'])
+
+  tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
+                                                  histogram_freq = 2,
+                                                  write_graph=True,
+                                                  write_images=True,
+                                                  update_freq = 'epoch',
+                                                  profile_batch = [2,10]
+                                                  )
 
   vae_mlp.fit(x_train, y_train,
             batch_size=batch_size,

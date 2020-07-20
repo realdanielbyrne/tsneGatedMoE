@@ -25,17 +25,6 @@ def sparseness(log_alphas, thresh=3):
         N_active += n_active
         N_total += n_total
     return 1.0 - N_active/N_total
-def negative_dkl(log_alpha=None):
-  # Constant values for approximating the kl divergence
-  k1, k2, k3 = 0.63576, 1.8732, 1.48695
-  c = -k1
-  # Compute each term of the KL and combine
-  term_1 = k1 * tf.nn.sigmoid(k2 + k3*log_alpha)
-  term_2 = -0.5 * tf.math.log1p(tf.math.exp(tf.math.negative(log_alpha)))
-  eltwise_dkl = term_1 + term_2 + c
-  return -tf.reduce_sum(eltwise_dkl)
-
-
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
   initial_thetas = []
@@ -110,6 +99,23 @@ def load_cifar10_data(categorical):
 
   return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
 
+def plot_to_image(figure):
+  import io
+  """Converts the matplotlib plot specified by 'figure' to a PNG image and
+  returns it. The supplied figure is closed and inaccessible after this call."""
+  # Save the plot to a PNG in memory.
+  buf = io.BytesIO()
+  plt.savefig(buf, format='png')
+  # Closing the figure prevents it from being displayed directly inside
+  # the notebook.
+  plt.close(figure)
+  buf.seek(0)
+  # Convert PNG buffer to TF image
+  image = tf.image.decode_png(buf.getvalue(), channels=4)
+  # Add the batch dimension
+  image = tf.expand_dims(image, 0)
+  return image
+
 def plot_encoding(encoder,
                  data,
                  batch_size=128,
@@ -128,13 +134,12 @@ def plot_encoding(encoder,
     filename = os.path.join(model_name, "vae_mean.png")
     # display a 2D plot of the digit classes in the latent space
     z_mean, _, _ = encoder.predict(x_test, batch_size=batch_size)
-    plt.figure(figsize=(12, 10))
+    figure = plt.figure(figsize=(10, 10))
     plt.scatter(z_mean[:, 0], z_mean[:, 1], c=y_test)
     plt.colorbar()
     plt.xlabel("z_mean")
     plt.ylabel("z_var")
-    plt.savefig(filename)
-    plt.show()
+    return figure
 
 def plot_layer_activations(model,x_test,y_test):
   
@@ -216,7 +221,6 @@ def print_names_and_values(activations: dict):
         print('')
     print('-' * 80)
 
-
 def gpu_dynamic_mem_growth():
     # Check for GPUs and set them to dynamically grow memory as needed
     # Avoids OOM from tensorflow greedily allocating GPU memory
@@ -229,14 +233,14 @@ def gpu_dynamic_mem_growth():
         print('Upgrade your tensorflow to 2.x to have the gpu_dynamic_mem_growth feature.')
 
 
-def plot_layer_activations(model,x_test,y_test):
+def plot_layer_activations(model,x_test,y_test, layername):
 
   from tensorflow.keras import backend as K
   model_in = model.input               # input placeholder
-  model_out = [layer.output for layer in model.layers if 'dense' in layer.name] # all layer outputs
+  model_out = [layer.output for layer in model.layers if layername in layer.name] # all layer outputs
   fun = K.function([model_in], model_out) # evaluation function
   
-  layer_outputs = fun([x_test[:100], 1.])   
+  layer_outputs = fun([x_test, 1.])   
 
   x = np.ones((layer_outputs[1].shape)) * np.expand_dims(y_test[:100],1)
   x = x*tf.random.normal(shape=(layer_outputs[1].shape),mean=1,stddev=.01)
@@ -250,16 +254,6 @@ def plot_layer_activations(model,x_test,y_test):
   plt.savefig('dense_layer_activations_by_class2.png')
   plt.show()
 
-  x = np.ones((layer_outputs[2].shape))*np.expand_dims(y_test[:100],1)
-  x = x*tf.random.normal(shape=(layer_outputs[2].shape),mean=1,stddev=.01)
-  y = np.ones((layer_outputs[2].shape))*y
-  c = tf.nn.softmax(np.squeeze(layer_outputs[2])) *100   
-  plt.scatter(x,y,c=c,cmap='Blues',alpha = .5)
-  plt.colorbar()
-  plt.xlabel("Label Class")
-  plt.ylabel("Layer Neuron")    
-  plt.savefig('dense_layer_activations_by_class3.png')
-  plt.show()
 
 def hinton(matrix, max_weight=None, ax=None):
     """Draw Hinton diagram for visualizing a weight matrix."""
@@ -283,24 +277,84 @@ def hinton(matrix, max_weight=None, ax=None):
     ax.autoscale_view()
     ax.invert_yaxis()
 
-def visualize_mlp(model):
-  fig, axes = plt.subplots(4, 4)
-  vmin, vmax = mlp.coefs_[0].min(), mlp.coefs_[0].max()
-
-  for coef, ax in zip(mlp.coefs_[0].T, axes.ravel()):
-      ax.matshow(coef.reshape(28, 28), cmap=plt.cm.gray, vmin=.5 * vmin, vmax=.5 * vmax)
-      ax.set_xticks(())
-      ax.set_yticks(())
-
+def plot_layer_weights(model,layername = 'layer2'):
+  l = model.get_layer(layername)
+  weights = l.get_weights()
+  
+  fig, axes = plt.subplots(4, 10)
+  vmin, vmax = weights[0].min(), weights[0].max()
+  
+  for coef, ax in zip(weights[0].T, axes.ravel()):
+    ax.matshow(coef.reshape(28, 28), cmap=plt.cm.gray, vmin=.5 * vmin,
+              vmax=.5 * vmax)
+    ax.set_xticks(())
+    ax.set_yticks(())
+  
   plt.show()
 
-def visualize_mlp_tf(model):
-  fig, axes = plt.subplots(4, 4)
-  vmin, vmax = mlp.coefs_[0].min(), mlp.coefs_[0].max()
 
-  for coef, ax in zip(mlp.coefs_[0].T, axes.ravel()):
-      ax.matshow(coef.reshape(28, 28), cmap=plt.cm.gray, vmin=.5 * vmin, vmax=.5 * vmax)
-      ax.set_xticks(())
-      ax.set_yticks(())
+def plot_mlp_activations(model, x_test, y_test, num_labels = 10):
+  
+  from tensorflow.keras import backend as K
+  model_in = model.input               # input placeholder
+  model_out = [layer.output for layer in model.layers if 'layer1' in layer.name] # all layer outputs
+  fun = K.function([model_in], model_out) # evaluation function
+  
+  layer_outputs = fun([x_test, 1.])  
+  z = layer_outputs[0]
 
+  results = []
+  x = 0
+  for x in range(num_labels):
+    targets = z[np.where(y_test == x)[0]]
+    targets = tf.stack(targets)
+    means = np.mean(targets, axis = 0)    
+    results.append(means)
+  
+  results = np.stack(results)    
+  vmin = results.min()
+  vmax = results.max()
+
+  fig, axes = plt.subplots(1, 10)
+  for i,ax in zip(range(10),axes.ravel()):
+    ax.matshow(results[i].reshape(18,18), cmap='Blues', vmin = .5*vmin,vmax = .5*vmax)
+    ax.set_xticks(())
+    ax.set_yticks(())
+  
   plt.show()
+
+
+
+def plot_reconstruction(decoder, x_test):
+  n = 30
+  digit_size = 28
+  figure = np.zeros((digit_size * n, digit_size * n))
+  # linearly spaced coordinates corresponding to the 2D plot
+  # of digit classes in the latent space
+  grid_x = np.linspace(-4, 4, n)
+  grid_y = np.linspace(-4, 4, n)[::-1]
+
+  for i, yi in enumerate(grid_y):
+      for j, xi in enumerate(grid_x):
+          z_sample = np.array([[xi, yi]])
+          x_decoded = decoder.predict(z_sample)
+          digit = x_decoded[0].reshape(digit_size, digit_size)
+          figure[i * digit_size: (i + 1) * digit_size,
+                j * digit_size: (j + 1) * digit_size] = digit
+
+  plt.figure(figsize=(10, 10))
+  start_range = digit_size // 2
+  end_range = n * digit_size + start_range + 1
+  pixel_range = np.arange(start_range, end_range, digit_size)
+  sample_range_x = np.round(grid_x, 1)
+  sample_range_y = np.round(grid_y, 1)
+
+  plt.xticks(pixel_range, sample_range_x)
+  plt.yticks(pixel_range, sample_range_y)
+  plt.xlabel("z[0]")
+  plt.ylabel("z[1]")
+  plt.imshow(figure, cmap='Greys_r')
+
+  plt.savefig(decoder.name)
+  plt.show()
+  return figure

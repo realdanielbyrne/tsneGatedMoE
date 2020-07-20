@@ -15,35 +15,32 @@ class VarDropout(Layer):
   def __init__(self,
                num_outputs,
                thresh = 3.,
-               activation = tf.keras.activations.relu,
+               activation = None,
                train_clip = True,
+               use_bias = True,
                **kwargs):
     super(VarDropout, self).__init__(**kwargs)
     self.num_outputs = num_outputs
     self.thresh = thresh
     self.activation = activation
     self.train_clip = train_clip
+    self.use_bias = use_bias
+    
 
   def build(self, input_shape):
     kernel_shape = [input_shape[-1], self.num_outputs]
 
-    self.theta = self.add_weight(shape = kernel_shape,
-                            initializer=tf.initializers.TruncatedNormal(),
-                            #regularizer=tf.keras.regularizers.L2(.001),
-                            trainable=True,
-                            name = 'theta')
+    self.theta = self.add_weight('theta',shape = kernel_shape,
+                            initializer=tf.initializers.RandomNormal(),
+                            trainable=True)
 
-    self.b = self.add_weight(shape = (self.num_outputs,),
-                            initializer=tf.initializers.TruncatedNormal(),
-                            #regularizer=tf.keras.regularizers.L2(.001),
-                            trainable=True,
-                            name = 'theta')                            
+    self.b = self.add_weight('b',shape = (self.num_outputs,),
+                            initializer=tf.initializers.RandomNormal(),
+                            trainable=True)                            
 
-    self.log_sigma2 = self.add_weight(shape = kernel_shape,
+    self.log_sigma2 = self.add_weight('log_sigma2',shape = kernel_shape,
                             initializer=tf.initializers.Constant(-10.),
-                            #regularizer=tf.keras.regularizers.L2(.001),
-                            trainable=True,
-                            name = 'log_sigma2')
+                            trainable=True)
     
     self.step = tf.Variable (0.,
                             name='step', 
@@ -70,9 +67,8 @@ class VarDropout(Layer):
 
         mu = tf.matmul(inputs, theta)
         si = tf.sqrt(tf.matmul(tf.square(inputs), tf.exp(log_alpha) * tf.square(theta)) + EPSILON)
-        int_step = tf.cast(self.step,tf.int32)
-
-        x = mu + si * tf.random.normal(tf.shape(mu))
+        x  = tf.random.normal(tf.shape(mu),mu,si)
+    
 
         # add loss      
         loss = self.negative_dkl(theta, self.log_sigma2) / 49500  
@@ -88,7 +84,13 @@ class VarDropout(Layer):
       # reshape, eg, some `None` dim in the result could be inferred.
       x.set_shape(self.compute_output_shape(inputs.shape))
 
-    return self.activation(x + self.b)
+    if self.activation is not None:
+      x = self.activation(x)
+    
+    if self.use_bias:
+      x = tf.nn.bias_add(x,self.b)
+
+    return x
 
   def compute_output_shape(self, input_shape):
     return (input_shape[0],self.num_outputs)
