@@ -377,8 +377,8 @@ def create_vae(x_train):
     input_dim = output_dim = x_train.shape[-1]
     
     # Define encoder model.  
-    i = tf.keras.Input(shape=(input_dim,), name=_vae.model_type +"enc_input")
-    x = Dense(_vae.intermediate, activation="relu",name=_vae.model_type +"_enc_d1")(i)
+    inputs = tf.keras.Input(shape=(input_dim,), name=_vae.model_type +"enc_input")
+    x = Dense(_vae.intermediate, activation="relu",name=_vae.model_type +"_enc_d1")(inputs)
     z_mean = Dense(_vae.latent, name=_vae.model_type +"_z_mean")(x)
     z_log_var = Dense(_vae.latent, name=_vae.model_type +"_z_log_var")(x)
 
@@ -387,20 +387,18 @@ def create_vae(x_train):
     else:
       x = Concatenate()([z_mean,z_log_var])
       z = VarDropout(_vae.latent, activation=tf.nn.relu, name=_vae.model_type +"_zvd")(x)
-
-    enc = Model(inputs=i, outputs=[z_mean, z_log_var, z], name=_vae.enc_name)
+    encoder = Model(inputs, outputs=[z_mean, z_log_var, z], name=_vae.enc_name)
     
-
     # Define decoder model.
-    li = Input(shape=(_vae.latent,), name=_vae.dec_name)
-    x = Dense(_vae.intermediate, activation='relu',name=_vae.model_type +"_decoder_d1")(i)
-    o = Dense(input_dim, name=_vae.model_type +'decoder_output',activation='sigmoid')(x)
-    dec = Model(li, o, name=_vae.dec_name)
+    latent_in = tf.keras.Input(shape=(_vae.latent,), name="latent_in")
+    x = Dense(_vae.intermediate, activation='relu',name="decoder_d1")(latent_in)
+    o = Dense(input_dim, name='decoder_output',activation='sigmoid')(x)
+    decoder = Model(latent_in, o, name=_vae.dec_name)
 
 
     # Define VAE model.
-    outputs = dec(enc(original_inputs)[2])
-    vae = tf.keras.Model(i, o, name=_vae.model_name)
+    outputs = decoder(encoder(i)[2])
+    vae = tf.keras.Model(i, o, name=_vae.vae_name)
     vae.summary()
 
     # Add KL divergence regularization loss.
@@ -481,11 +479,20 @@ save_dir = os.path.join(os.getcwd(), 'saved_models')
 log_dir = "logs\\fit\\" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+# Callbacks
+sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch') 
+tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
+                                              histogram_freq = 2,
+                                              write_graph=True,
+                                              write_images=True,
+                                              update_freq = 'epoch',
+                                              profile_batch = [2,10]
+                                              )
+
+
 
 
 if __name__ == '__main__':
-
-  # parameters
 
   # load data
   if _md.dataset == 'mnist':
@@ -494,26 +501,29 @@ if __name__ == '__main__':
     (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_cifar10_data(True)
 
 
+  ####################################################################
+  # vae
+  #
+  vae, encoder, decoder = create_vae(x_train)
+  vae.fit(x_train, x_train, 
+          epochs = VAE_EPOCHS, 
+          batch_size = BATCH_SIZE,
+          validation_split = .1,
+          shuffle = True,
+          callbacks =[tensorboard_cb],
+          verbose=1
+        )
 
   # gather predictions for the test batch
   _, _, predictions = encoder.predict(x_test, batch_size=BATCH_SIZE) 
   
+  # calculate class means
   initial_values = utils.get_varparams_class_means(predictions, y_test, num_labels)
-  p = tf.stack(predictions)
-  
 
 
   ####################################################################
-  # Create
-  #
- 
-  # vae
-  vae, encoder, decoder = create_vae(x_train)
-
-
-
   # model
-
+  #
   model = create_model(
                 x_train, 
                 initial_values, 
@@ -534,38 +544,21 @@ if __name__ == '__main__':
   ####################################################################
   # Train
   #
-
   if CUSTOM_TRAIN:
     Custom_train(model, x_train, y_train, optimizer, x_test, y_test, loss_fn)  
 
   else:  
-    sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch') 
-    tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
-                                                  histogram_freq = 2,
-                                                  write_graph=True,
-                                                  write_images=True,
-                                                  update_freq = 'epoch',
-                                                  profile_batch = [2,10]
-                                                  )
 
-    vae.fit(x_train, x_train, 
-            epochs = VAE_EPOCHS, 
-            batch_size = BATCH_SIZE,
-            validation_split = .1,
-            shuffle = True,
-            callbacks =[tensorboard_cb],
-            verbose=1
-          )
-    
+      
     if not _md.enc_trainable:
       encoder.trainable = False
 
     model.fit(x_train, y_train, 
-              epochs=EPOCHS, 
-              batch_size=BATCH_SIZE,            
+              epochs = EPOCHS, 
+              batch_size = BATCH_SIZE,            
               validation_split = .01,
-              shuffle=True,
-              callbacks=[ tensorboard_cb],
+              shuffle = True,
+              callbacks=[tensorboard_cb,sparsity_cb],
               verbose=1
               )
 
