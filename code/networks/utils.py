@@ -116,30 +116,7 @@ def plot_to_image(figure):
   image = tf.expand_dims(image, 0)
   return image
 
-def plot_encoding(encoder,
-                 data,
-                 batch_size=128,
-                 model_name="vae_mnist"):
-    """Plots labels and MNIST digits as a function of the 2D latent vector
-    # Arguments
-        models (tuple): encoder and decoder models
-        data (tuple): test data and label
-        batch_size (int): prediction batch size
-        model_name (string): which model is using this function
-    """
 
-    x_test, y_test = data
-    os.makedirs(model_name, exist_ok=True)
-
-    filename = os.path.join(model_name, "vae_mean.png")
-    # display a 2D plot of the digit classes in the latent space
-    z_mean, _, _ = encoder.predict(x_test, batch_size=batch_size)
-    figure = plt.figure(figsize=(10, 10))
-    plt.scatter(z_mean[:, 0], z_mean[:, 1], c=y_test)
-    plt.colorbar()
-    plt.xlabel("z_mean")
-    plt.ylabel("z_var")
-    return figure
 
 def plot_layer_activations(model,x_test,y_test):
   
@@ -256,7 +233,16 @@ def plot_layer_activations(model,x_test,y_test, layername):
 
 
 def hinton(matrix, max_weight=None, ax=None):
-    """Draw Hinton diagram for visualizing a weight matrix."""
+    """Draw Hinton diagram for visualizing a weight matrix.
+    
+    
+    # generate hinton
+    # l = model.get_layer('layer2')
+    # weights = l.get_weights()
+    # theta = weights[0]
+    # utils.hinton(theta)
+
+    """
     ax = ax if ax is not None else plt.gca()
 
     if not max_weight:
@@ -324,6 +310,32 @@ def plot_mlp_activations(model, x_test, y_test, num_labels = 10):
   plt.show()
 
 
+def plot_encoding(encoder,
+                 data,
+                 batch_size=128,
+                 model_name="vae_mnist"):
+    """Plots labels and MNIST digits as a function of the 2D latent vector
+    # Arguments
+        models (tuple): encoder and decoder models
+        data (tuple): test data and label
+        batch_size (int): prediction batch size
+        model_name (string): which model is using this function
+    """
+
+    x_test, y_test = data
+    os.makedirs(model_name, exist_ok=True)
+
+    filename = os.path.join(model_name, "vae_mean.png")
+    # display a 2D plot of the digit classes in the latent space
+    z_mean, _, _ = encoder.predict(x_test, batch_size=batch_size)
+    figure = plt.figure(figsize=(10, 10))
+    plt.scatter(z_mean[:, 0], z_mean[:, 1], c=y_test)
+    plt.colorbar()
+    plt.xlabel("z_mean")
+    plt.ylabel("z_var")
+    plt.savefig("plots/" + encoder.name )
+    return figure
+
 
 def plot_reconstruction(decoder, x_test):
   n = 30
@@ -354,7 +366,6 @@ def plot_reconstruction(decoder, x_test):
   plt.xlabel("z[0]")
   plt.ylabel("z[1]")
   plt.imshow(figure, cmap='Greys_r')
-
-  plt.savefig(decoder.name)
+  plt.savefig("plots/" + decoder.name)  
   plt.show()
-  return figure
+  

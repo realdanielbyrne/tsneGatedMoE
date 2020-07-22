@@ -75,23 +75,23 @@ def load_cifar10_data(sparse):
   return (x_train, y_train), (x_test, y_test), num_labels
 
 def create_model(x_train, num_labels):
-  model = Sequential()
-  model.add(Conv2D(input_shape=x_train[0,:,:,:].shape, filters=96, kernel_size=(3,3)))
-  model.add(Activation('relu'))
-  model.add(Conv2D(filters=96, kernel_size=(3,3), strides=2))
-  model.add(Activation('relu'))
-  model.add(Dropout(0.2))
-  model.add(Conv2D(filters=192, kernel_size=(3,3)))
-  model.add(Activation('relu'))
-  model.add(Conv2D(filters=192, kernel_size=(3,3), strides=2))
-  model.add(Activation('relu'))
-  model.add(Dropout(0.5))
-  model.add(Flatten())
-  model.add(BatchNormalization())
-  model.add(Dense(256))
-  model.add(Activation('relu'))
-  model.add(Dense(num_labels, activation="softmax"))
-
+  model = Sequential (
+    Conv2D(input_shape=x_train[0,:,:,:].shape, filters=96, kernel_size=(3,3)),
+    Activation('relu'),
+    Conv2D(filters=96, kernel_size=(3,3), strides=2),
+    Activation('relu'),
+    Dropout(0.2),
+    Conv2D(filters=192, kernel_size=(3,3)),
+    Activation('relu'),
+    Conv2D(filters=192, kernel_size=(3,3), strides=2),
+    Activation('relu'),
+    Dropout(0.5),
+    Flatten(),
+    BatchNormalization(),
+    Dense(256),
+    Activation('relu'),
+    Dense(num_labels, activation="softmax")
+  )
   return model
 
 if __name__ == '__main__':

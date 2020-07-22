@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import Input,Dense, Dropout, Reshape
-from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average
+from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average, Activation
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
@@ -282,28 +282,59 @@ def create_model(
     plot_model(model, to_file=model_type+'.png', show_shapes=True)
     return model
 
-  elif model_type == 'stack':
+  elif model_type == 'mlp-stack':
     print('Building Encoder-MLP Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     _,_, z = encoder(model_input)
-    z_mean = z[:,0]
-    z_log_var = z[:,1]
+
     x = Dense(300,activation = 'relu')(z)
     x = Dense(300,activation = 'relu')(x)
     x = Dense(300,activation = 'relu')(x)
     x = Dropout(dropout_rate)(x)
     model_out = Dense(num_labels, name=model_type)(x)
-    model = Model(model_input, model_out, name = model_name)
+
+    model = Model(model_input, model_out, name =_md.model_name  )
     model.summary()
 
-    kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
-    kl_loss = tf.reduce_sum(kl_loss, axis=-1)
-    kl_loss *= -0.5
-
-    # add loss to model
-    # model_loss = tf.reduce_mean(loss_fn + kl_loss)
-    model.add_loss(kl_loss)
+    if _md.kld_loss:
+      kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+      kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+      kl_loss *= -0.5
+      model.add_loss(kl_loss)
+    
     return model
+
+  elif model_type == 'conv-stack':
+    print('Building Encoder-CONV Stack')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    _,_, z = encoder(model_input)
+
+    model = Sequential (
+      Conv2D(input_shape=x_train[0,:,:,:].shape, filters=96, kernel_size=(3,3)),
+      Activation('relu'),
+      Conv2D(filters=96, kernel_size=(3,3), strides=2),
+      Activation('relu'),
+      Dropout(0.2),
+      Conv2D(filters=192, kernel_size=(3,3)),
+      Activation('relu'),
+      Conv2D(filters=192, kernel_size=(3,3), strides=2),
+      Activation('relu'),
+      Dropout(0.5),
+      Flatten(),
+      BatchNormalization(),
+      Dense(256),
+      Activation('relu'),
+      Dense(num_labels, activation="softmax")
+    )
+
+    if _md.kld_loss:
+      kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+      kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+      kl_loss *= -0.5
+      model.add_loss(kl_loss)
+    
+    return model
+
 
   elif model_type == 'sampling_dropout':
     print('Building Pre-Encoder Model')
@@ -318,7 +349,7 @@ def create_model(
     x = VarDropout(100, name = model_type+'_vd2',activation = tf.keras.activations.relu)(x)
     
     model_out = Dense(num_labels, name=model_name)(x)
-    model = Model(model_input, model_out, name = model_name)
+    model = Model(model_input, model_out, name = _md.model_name)
     model.summary()
     
     kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
@@ -333,42 +364,32 @@ def create_model(
  
   elif model_type == 'conv':
     print('Building Reference CONV Model')
-    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _, _, z = encoder(i)
-    x = Reshape(target_shape = (28, 28, 1))(i)
-    x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
-    x = MaxPooling2D(pool_size=(2, 2))(x)
-    x = Flatten()(x)
-    x = Dense(10)(x)
-    
-    model = Model(i, x, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Sequential (
+      Conv2D(input_shape=x_train[0,:,:,:].shape, filters=96, kernel_size=(3,3)),
+      Activation('relu'),
+      Conv2D(filters=96, kernel_size=(3,3), strides=2),
+      Activation('relu'),
+      Dropout(0.2),
+      Conv2D(filters=192, kernel_size=(3,3)),
+      Activation('relu'),
+      Conv2D(filters=192, kernel_size=(3,3), strides=2),
+      Activation('relu'),
+      Dropout(0.5),
+      Flatten(),
+      BatchNormalization(),
+      Dense(256),
+      Activation('relu'),
+      Dense(num_labels, activation="softmax")
+    )
     return model
-
-  elif model_type == 'conv_stack':
-    print('Building conv_stack Model')
-    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _, _, z = encoder(i)
-    x = Sampling()
-    x = keras.layers.Reshape(target_shape=(28, 28, 1))(x)
-    x = keras.layers.Conv2D(filters=num_labels, kernel_size=(3, 3), activation='relu')(x)
-    x = keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-    x = keras.layers.Flatten()(x)
-    x = keras.layers.Dense(10)
-
-    model_out = Dense(num_labels, name=model_type)(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    return model
-    
+   
   else:   
     print('Building Reference Lenet324_100_100 Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
 
     model_out = Dense(num_labels, name=model_type +'_out')(x)
-    model = Model(model_input, model_out, name = model_name)
+    model = Model(model_input, model_out, name = _md.model_name)
     model.summary()
     return model
 
@@ -377,50 +398,52 @@ def create_vae(x_train):
     input_dim = output_dim = x_train.shape[-1]
     
     # Define encoder model.  
-    inputs = tf.keras.Input(shape=(input_dim,), name=_vae.model_type +"enc_input")
-    x = Dense(_vae.intermediate, activation="relu",name=_vae.model_type +"_enc_d1")(inputs)
+    inputs = tf.keras.Input(shape=(input_dim,), name="encoder_input")
+    x = Dense(_vae.intermediate,name=_vae.model_type +"_enc_d1")(inputs)
+    x = Activation(_vae.act)(x)
     z_mean = Dense(_vae.latent, name=_vae.model_type +"_z_mean")(x)
     z_log_var = Dense(_vae.latent, name=_vae.model_type +"_z_log_var")(x)
 
     if _vae.model_type == 'ref':
       z = Sampling(name=_vae.model_type +"_z")([z_mean, z_log_var])      
     else:
-      x = Concatenate()([z_mean,z_log_var])
-      z = VarDropout(_vae.latent, activation=tf.nn.relu, name=_vae.model_type +"_zvd")(x)
+         
+      z = VarDropout(_vae.latent, name=_vae.model_type +"_zvd")(x)
+      x = Activation(_vae.act)(x)
     encoder = Model(inputs, outputs=[z_mean, z_log_var, z], name=_vae.enc_name)
+    encoder.summary()
     
     # Define decoder model.
     latent_in = tf.keras.Input(shape=(_vae.latent,), name="latent_in")
-    x = Dense(_vae.intermediate, activation='relu',name="decoder_d1")(latent_in)
-    o = Dense(input_dim, name='decoder_output',activation='sigmoid')(x)
-    decoder = Model(latent_in, o, name=_vae.dec_name)
+    x = Dense(_vae.intermediate, name="decoder_d1")(latent_in)
+    x = Activation(_vae.act)(x)
+    outputs = Dense(input_dim, name='decoder_output', activation='sigmoid')(x)
+    decoder = Model(latent_in, outputs, name=_vae.dec_name)
+    decoder.summary()
 
-
-    # Define VAE model.
-    outputs = decoder(encoder(i)[2])
-    vae = tf.keras.Model(i, o, name=_vae.vae_name)
+    # Define VAE model
+    outputs = decoder(encoder(inputs)[2])
+    vae = tf.keras.Model(inputs, outputs, name=_vae.vae_name)
     vae.summary()
 
-    # Add KL divergence regularization loss.
+    # Add loss
     if   _vae.loss == 'mse':
-      reconstruction_loss = losses.mean_squared_error(original_inputs, outputs)
+      reconstruction_loss = losses.mean_squared_error(inputs, outputs)
     elif _vae.loss == 'msle':
-      reconstruction_loss = losses.mean_squared_logarithmic_error(original_inputs, outputs)
+      reconstruction_loss = losses.mean_squared_logarithmic_error(inputs, outputs)
     elif _vae.loss == 'bce':
-      reconstruction_loss = losses.binary_crossentropy(original_inputs, outputs)
+      reconstruction_loss = losses.binary_crossentropy(inputs, outputs)
     elif _vae.loss == 'cce':
-      reconstruction_loss = losses.categorical_crossentropy(original_inputs, outputs)
-    elif _vae.loss == 'sce':      
-      reconstruction_loss = tf.nn.sigmoid_cross_entropy_with_logits(logits = outputs, labels = original_inputs)
+      reconstruction_loss = losses.categorical_crossentropy(inputs, outputs)
 
      # Scale the loss
     reconstruction_loss *= input_dim    
-    
+
+    # kld regularization     
     if _vae.global_kld:
-      kl_loss = tf.keras.losses.kld(original_inputs, outputs)
-      # kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
-      # kl_loss = tf.reduce_sum(kl_loss, axis=-1)
-      # kl_loss *= -0.5
+      kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
+      kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+      kl_loss *= -0.5
 
     else:
       kl_loss = 0
@@ -428,38 +451,42 @@ def create_vae(x_train):
     # Add loss to model
     vae_loss = tf.reduce_mean(reconstruction_loss + kl_loss)
     vae.add_loss(vae_loss)
-
-    optimizer = tf.keras.optimizers.Adam()
-    vae.compile(optimizer)
+    # enc.compile(_vae.optimizer)
+    # dec.compile(_vae.optimizer)
+    vae.compile(_vae.optimizer)
         
     return vae, encoder, decoder
 
 
 # Training settings
-EPOCHS = 1
+EPOCHS = 20
 BATCH_SIZE = 128
-VAE_EPOCHS = 10
+VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
-
+BUILD_VAE = False
 
 ##########################################################################
 # Settings
 #
 
 class VaeSettings(object):
-  model_type = 'vd'
+  model_type = 'ref'
+  global_kld = True
+
   loss = 'msle'  
   intermediate = 512
   latent = 2
+  optimizer = tf.keras.optimizers.Adam()
+  act = 'relu'
 
-  # global kld or local only (VD)
-  global_kld = True
-  load_weights = False
+  if global_kld:
+    reg = 'g'
+  else:
+    reg = 'l'
 
-  vae_name = "vae-{}-{}-{}".format(model_type, intermediate, latent)
-  enc_name = "enc-{}-{}-{}".format(model_type, intermediate, latent)
-  dec_name = "dec-{}-{}-{}".format(model_type, intermediate, latent)
-
+  vae_name = "vae-{}-{}-{}-{}-{}-{}".format(model_type, intermediate, latent, loss, reg, act)
+  enc_name = "enc-{}-{}-{}-{}-{}-{}".format(model_type, intermediate, latent, loss, reg, act)
+  dec_name = "dec-{}-{}-{}-{}-{}-{}".format(model_type, intermediate, latent, loss, reg, act)
 _vae = VaeSettings()  
 
 
@@ -467,29 +494,22 @@ class ModelSettings(object):
   model_type = 'stack'
   dataset = 'mnist'
   
+  kld_loss = True
   enc_trainable = True
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam()
   metrics = [keras.metrics.CategoricalAccuracy()]
 
-  model_name = "{}-{}".format(model_type,dataset)
-
+  if enc_trainable:
+    t = 'trn'
+  else:
+    t = 'lock'
+  
+  model_name = "{}-{}-{}-{}".format(model_type, dataset, t, kld_loss)
 _md = ModelSettings()
+
 save_dir = os.path.join(os.getcwd(), 'saved_models')
 log_dir = "logs\\fit\\" + datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-# Callbacks
-sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch') 
-tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
-                                              histogram_freq = 2,
-                                              write_graph=True,
-                                              write_images=True,
-                                              update_freq = 'epoch',
-                                              profile_batch = [2,10]
-                                              )
-
-
 
 
 if __name__ == '__main__':
@@ -504,22 +524,61 @@ if __name__ == '__main__':
   ####################################################################
   # vae
   #
-  vae, encoder, decoder = create_vae(x_train)
-  vae.fit(x_train, x_train, 
-          epochs = VAE_EPOCHS, 
-          batch_size = BATCH_SIZE,
-          validation_split = .1,
-          shuffle = True,
-          callbacks =[tensorboard_cb],
-          verbose=1
-        )
 
+  # Callbacks
+  sparsity_cb = tfmot.sparsity.keras.PruningSummaries(log_dir = log_dir, update_freq='epoch') 
+  tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
+                                                histogram_freq = 2,
+                                                write_graph=True,
+                                                write_images=True,
+                                                update_freq = 'epoch',
+                                                profile_batch = [2,10]
+                                                )
+
+
+  # build
+  if BUILD_VAE:
+    vae, enc, dec = create_vae(x_train)
+    # fit
+    vae.fit(x_train, x_train, 
+            epochs = VAE_EPOCHS, 
+            batch_size = BATCH_SIZE,
+            validation_split = .1,
+            shuffle = True,
+            callbacks =[tensorboard_cb],
+            verbose=1
+          )
+    
+    vae.save('models/'+ _vae.vae_name)
+    enc.save('models/'+ _vae.enc_name)
+    dec.save('models/'+ _vae.dec_name)
+
+    # plot
+    plot_model(vae, to_file= "plots\\" +_vae.vae_name + '.png', show_shapes=True, show_layer_names=False)
+    plot_model(enc, to_file= "plots\\" +_vae.enc_name + '.png', show_shapes=True, show_layer_names=False)
+    plot_model(dec, to_file= "plots\\" +_vae.dec_name + '.png', show_shapes=True, show_layer_names=False)
+
+    latent_fig = utils.plot_encoding(enc,
+                    [x_test, y_test],
+                    batch_size=BATCH_SIZE,
+                    model_name=_vae.model_type)
+
+    utils.plot_reconstruction(dec, x_test)                   
+
+  else:
+    vae = tf.keras.models.load_model('models/'+ _vae.vae_name)
+    enc = tf.keras.models.load_model('models/'+ _vae.enc_name)
+    dec = tf.keras.models.load_model('models/'+ _vae.dec_name)
+    vae.compile
+
+  
   # gather predictions for the test batch
-  _, _, predictions = encoder.predict(x_test, batch_size=BATCH_SIZE) 
+  _, _, predictions = enc.predict(x_test, batch_size=BATCH_SIZE) 
   
   # calculate class means
   initial_values = utils.get_varparams_class_means(predictions, y_test, num_labels)
 
+  
 
   ####################################################################
   # model
@@ -528,13 +587,13 @@ if __name__ == '__main__':
                 x_train, 
                 initial_values, 
                 num_labels, 
-                encoder, 
+                enc, 
                 _md.loss_fn ,
                 _md.model_type,
                 predictions = predictions,                
                 dropout_rate = .2)
 
-  model.compile(optimizer,
+  model.compile(_md.optimizer,
             loss = _md.loss_fn, 
             metrics = _md.metrics,
             experimental_run_tf_function = False)
@@ -545,10 +604,9 @@ if __name__ == '__main__':
   # Train
   #
   if CUSTOM_TRAIN:
-    Custom_train(model, x_train, y_train, optimizer, x_test, y_test, loss_fn)  
+    Custom_train(model, x_train, y_train, _md.optimizer, x_test, y_test, loss_fn)  
 
   else:  
-
       
     if not _md.enc_trainable:
       encoder.trainable = False
@@ -558,52 +616,15 @@ if __name__ == '__main__':
               batch_size = BATCH_SIZE,            
               validation_split = .01,
               shuffle = True,
-              callbacks=[tensorboard_cb,sparsity_cb],
+              callbacks=[tensorboard_cb],
               verbose=1
               )
-
-
-
-  ####################################################################
-  # Plot
-  #
-    
-  plot_model(vae, to_file=_vae.vae_name + '.png', show_shapes=True, show_layer_names=False)
-  plot_model(enc, to_file=_vae.enc_name + '.png', show_shapes=True, show_layer_names=False)
-  plot_model(dec, to_file=_vae.dec_name + '.png', show_shapes=True, show_layer_names=False)
-
-  model_writer = tf.summary.create_file_writer(log_dir + '\\vae')
-  model_writer.set_as_default()
-
-  latent_fig = utils.plot_encoding(encoder,
-                  [x_test, y_test],
-                  batch_size=BATCH_SIZE,
-                  model_name=_vae.model_type)
-
-  reconstruct_fig = utils.plot_reconstruction(encoder,decoder,x_test)                   
-
-  # generate hinton
-  # l = model.get_layer('layer2')
-  # weights = l.get_weights()
-  # theta = weights[0]
-  # utils.hinton(theta)
-
-  ###################################################################################
-  # Log
-  #
-
-  model_writer = tf.summary.create_file_writer(log_dir + '\\images')
-  model_writer.set_as_default()
-  with model_writer.as_default():
-    tf.summary.image("Latent Space Plot", utils.plot_to_image(latent_fig), step = 0)
-    tf.summary.image("Reconstruction Plot", utils.plot_to_image(reconstruct_fig), step = 0)
-
   
   ####################################################################
   # Evaluate
   #
   score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)  
   print('\n')
-  print(str(model_type) + ' Model Test Loss : ', score[0])
-  print(str(model_type) + ' Test Accuracy : %.1f%%' % (100.0 * score[1]))
+  print(str(_md.model_name) + ' Model Test Loss : ', score[0])
+  print(str(_md.model_name) + ' Test Accuracy : %.1f%%' % (100.0 * score[1]))
 

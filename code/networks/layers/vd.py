@@ -51,6 +51,7 @@ class VarDropout(Layer):
     log_alpha = tf.clip_by_value(self.log_sigma2 - tf.math.log(tf.square(self.theta) + EPSILON),-ALPHA,ALPHA)
     clip_mask = tf.less(log_alpha, self.thresh)
     self.step = self.step.assign_add(.001)
+    self.step = self.step.assign(tf.maximum(1.,self.step))
 
 
     if not training:
@@ -59,23 +60,18 @@ class VarDropout(Layer):
       loss = 0.
 
     else:
-      if self.step > 1.:
-        
-        theta = tf.identity(self.theta)
-        if self.train_clip:
-          theta = tf.where(clip_mask,theta, 0.)
+      theta = tf.identity(self.theta)
+      if self.train_clip:
+        theta = tf.where(clip_mask, theta, 0.)
 
-        mu = tf.matmul(inputs, theta)
-        si = tf.sqrt(tf.matmul(tf.square(inputs), tf.exp(log_alpha) * tf.square(theta)) + EPSILON)
-        x  = tf.random.normal(tf.shape(mu),mu,si)
-    
+      mu = tf.matmul(inputs, theta)
+      si = tf.sqrt(tf.matmul(tf.square(inputs), tf.exp(log_alpha)) + EPSILON)
+      x  = tf.random.normal(tf.shape(mu),mu,si)
+  
+      # add loss      
+      loss = self.negative_dkl(theta, self.log_sigma2) / 49500  
+      loss = loss * self.step
 
-        # add loss      
-        loss = self.negative_dkl(theta, self.log_sigma2) / 49500  
-
-      else:
-        x = tf.matmul(inputs, self.theta)
-        loss = 0.
 
     self.add_loss(loss) 
 
@@ -107,11 +103,13 @@ class VarDropout(Layer):
     return -tf.reduce_sum(dkl)
 
   def get_config(self):
-      return {
+    config = {
         'num_outputs': self.num_outputs, 
         'thresh': self.thresh,
-        #'step': self.step,
         'activation':self.activation,
         'train_clip':self.train_clip
         }
+    base_config = super(VarDropout, self).get_config()
+    return dict(list(base_config.items()) + list(config.items()))
+        
 
