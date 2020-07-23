@@ -12,3 +12,6 @@
     - loss greater with msle
     - loss greater with vd, but reconstruction is garbled
   - A trained vae improved the stack model in just a single episode of training. 
+
+
+## Stack 

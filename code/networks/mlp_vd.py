@@ -180,9 +180,7 @@ def create_model(
     x = Dense(300,  activation = 'relu', name=model_type+'_d2')(x)
 
     model_out = Dense(num_labels, name=model_type+'_output')(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model
 
   elif model_type == 'gatedmoe':
@@ -198,9 +196,7 @@ def create_model(
 
     x = Concatenate()(y)    
     model_out = Dense(num_labels, name=model_type)(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model
 
   elif model_type == 'vdmoe':
@@ -216,9 +212,7 @@ def create_model(
 
     x = Concatenate()(y)    
     model_out = Dense(num_labels, name=model_type)(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model
 
   elif model_type == 'vd_ref':
@@ -229,9 +223,7 @@ def create_model(
     x = VarDropout(300, name = model_type+'_d3',activation = tf.keras.activations.relu)(x)
 
     model_out = Dense(num_labels, name = model_type+'_out')(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model
 
   elif model_type == 'dense_ref':
@@ -243,9 +235,7 @@ def create_model(
     x = Dropout(.5)(x)
 
     model_out = Dense(num_labels, name = model_type)(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model    
 
   elif model_type == 'pdf':
@@ -260,15 +250,11 @@ def create_model(
 
     model_out = Dense(num_labels,name=model_type+'_output')(x)
     model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
     return model
 
   elif model_type == 'pd':
     print('Building Probability Dropout MLP Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    
-    
     x = Dense(300,activation = 'relu', name=model_type+'_d1')(model_input)
     x = PGD(predictions, 300,name=model_type+'_pd1')(x)
     x = Dense(300,activation = 'relu', name=model_type+'_d2')(x)
@@ -277,9 +263,7 @@ def create_model(
     x = PGD(predictions, 300,name=model_type+'_pd3')(x)
 
     model_out = Dense(num_labels,name=model_type+"_output")(x)
-    model = Model(model_input, model_out, name = model_name)
-    model.summary()
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
+    model = Model(model_input, model_out, name = _md.model_name)
     return model
 
   elif model_type == 'mlp-stack':
@@ -291,10 +275,9 @@ def create_model(
     x = Dense(300,activation = 'relu')(x)
     x = Dense(300,activation = 'relu')(x)
     x = Dropout(dropout_rate)(x)
-    model_out = Dense(num_labels, name=model_type)(x)
+    model_out = Dense(num_labels, name=_md.model_name)(x)
 
     model = Model(model_input, model_out, name =_md.model_name  )
-    model.summary()
 
     if _md.kld_loss:
       kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
@@ -326,6 +309,7 @@ def create_model(
       Activation('relu'),
       Dense(num_labels, activation="softmax")
     )
+    model.name = _md.model_name
 
     if _md.kld_loss:
       kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
@@ -335,14 +319,42 @@ def create_model(
     
     return model
 
+  elif model_type == 'smconv_ref':
+    print('Building Reference small conv Model')
+    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+
+    if _md.dataset == 'mnist':
+      x = Reshape(target_shape = (28, 28, 1))(i)
+    x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Flatten()(x)
+    x = Dense(10)(x)
+    
+    model = Model(i, x, name = _md.model_name)
+    return model
+
+  elif model_type == 'smconv_stack':
+    print('Building small conv_stack Model')
+    i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    _, _, z = encoder(i)
+
+
+    x = Reshape(target_shape = (28, 28, 1))(x)
+    x = Flatten()(x)
+    
+    x = Conv2D(filters = num_labels, kernel_size = (3, 3), activation = 'relu')(x)
+    x = MaxPooling2D(pool_size = (2, 2))(x)
+    x = Flatten()(x)
+    x = Dense(10)
+
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = _md.model_name)
+    return model
 
   elif model_type == 'sampling_dropout':
-    print('Building Pre-Encoder Model')
+    print('Buildingsampling_dropout Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _, _, z = encoder(model_input)
-    z_mean = z[:,0]
-    z_log_var = z[:,1]
-    
+
     x = Dense(300,activation = 'relu',name = model_type+'_d1')(model_input)
     x = VarDropout(300, name = model_type+'_vd1',activation = tf.keras.activations.relu)(x)
     x = Dense(100,activation = 'relu',name = model_type+'_d2')(x)
@@ -356,10 +368,9 @@ def create_model(
     kl_loss = tf.reduce_sum(kl_loss, axis=-1)
     kl_loss *= -0.5
 
-    # add loss to model
-    #model_loss = tf.reduce_mean(loss_fn + kl_loss)
+    #add loss to model
+    model_loss = tf.reduce_mean(loss_fn + kl_loss)
     model.add_loss(kl_loss)
-    plot_model(model, to_file=model_type+'.png', show_shapes=True)
     return model
  
   elif model_type == 'conv':
@@ -381,16 +392,16 @@ def create_model(
       Activation('relu'),
       Dense(num_labels, activation="softmax")
     )
+    model.name = _md.model_name
     return model
    
   else:   
-    print('Building Reference Lenet324_100_100 Model')
+    print('Building Reference Lenet300_100_100 Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
     x = DropoutLeNetBlock(rate = dropout_rate)(model_input)
 
     model_out = Dense(num_labels, name=model_type +'_out')(x)
     model = Model(model_input, model_out, name = _md.model_name)
-    model.summary()
     return model
 
 
@@ -459,7 +470,7 @@ def create_vae(x_train):
 
 
 # Training settings
-EPOCHS = 20
+EPOCHS = 10
 BATCH_SIZE = 128
 VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
@@ -489,14 +500,17 @@ class VaeSettings(object):
   dec_name = "dec-{}-{}-{}-{}-{}-{}".format(model_type, intermediate, latent, loss, reg, act)
 _vae = VaeSettings()  
 
+def myLoss(y_true,y_pred):
+  return tf.nn.softmax_cross_entropy_with_logits(y_true,y_pred)
 
 class ModelSettings(object):
-  model_type = 'stack'
+  model_type = 'smconv_ref'
   dataset = 'mnist'
   
   kld_loss = True
   enc_trainable = True
-  loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
+  loss_fn = myLoss
+  #loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam()
   metrics = [keras.metrics.CategoricalAccuracy()]
 
@@ -505,7 +519,12 @@ class ModelSettings(object):
   else:
     t = 'lock'
   
-  model_name = "{}-{}-{}-{}".format(model_type, dataset, t, kld_loss)
+  if kld_loss:
+    reg = 'kld'
+  else:
+    reg = ''
+  
+  model_name = "{}-{}-{}-{}".format(model_type, dataset, t, reg)
 _md = ModelSettings()
 
 save_dir = os.path.join(os.getcwd(), 'saved_models')
@@ -592,12 +611,16 @@ if __name__ == '__main__':
                 _md.model_type,
                 predictions = predictions,                
                 dropout_rate = .2)
+  model.summary()
 
   model.compile(_md.optimizer,
             loss = _md.loss_fn, 
             metrics = _md.metrics,
             experimental_run_tf_function = False)
 
+  model.summary()
+  plot_model(model, to_file = "plots/"+_md.model_name +'.png', show_shapes = True)
+  
 
 
   ####################################################################
