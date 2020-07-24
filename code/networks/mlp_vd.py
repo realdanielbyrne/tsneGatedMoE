@@ -36,8 +36,22 @@ EPSILON = 1e-8
 ALPHA = 8.
 
 
-# Custom_train
-import tensorflow as tf
+class Floor(Layer):
+  def __init__( self, 
+              zero_point = 1e-2,
+              **kwargs):
+    super(Floor, self).__init__(**kwargs)
+    self.zero_point = zero_point
+
+  def call(self, inputs):
+    # push values that are close to zero, to zero, promotes sparse models which are more efficient
+    condition = tf.less(tf.abs(inputs),self.zero_point)
+    x = tf.where(condition,tf.zeros_like(inputs),inputs)
+    return x
+
+  def get_config(self):
+    return {"zero_point":zero_point}    
+      
 
 def vd_loss(model):
   log_alphas = []
@@ -404,6 +418,21 @@ def create_model(
     model = Model(model_input, model_out, name = _md.model_name)
     return model    
 
+  elif model_type == 'dense_floor':
+    print('Building dense_fkoor Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
+    x = Dense(1000, activation='relu',name = model_type+'_d1')(model_input)
+    x = Floor(.2)(x)
+    x = Dense(500, activation='relu',name = model_type+'_d3')(x)
+    x = Floor(.2)(x)
+    x = Dense(500, activation='relu',name = model_type+'_d4')(x)
+    x = Floor(.3)(x)
+    
+    model_out = Dense(num_labels, name = model_type)(x)
+    model = Model(model_input, model_out, name = _md.model_name)
+    return model    
+
+
   elif model_type == 'pdf':
     print('Building pdf Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
@@ -670,7 +699,8 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'cgd_model'
+  model_type = 'dense_floor'
+  zero_point = .09
   
   kld_loss = False
   enc_trainable = True

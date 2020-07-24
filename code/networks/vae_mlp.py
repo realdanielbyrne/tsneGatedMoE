@@ -23,6 +23,7 @@ def load_data(args):
   else:
     return  utils.load_cifar10_data(args.categorical)
 
+
 class Sampling(layers.Layer):
 
   def call(self, inputs):
