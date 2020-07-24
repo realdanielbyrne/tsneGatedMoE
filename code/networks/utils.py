@@ -39,14 +39,24 @@ def get_varparams_class_samples(predictions, y_test, num_labels):
   initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
   return initial_values
 
-def get_varparams_class_means(predictions, y_test, num_labels):
+def get_classp(predictions, y_test, num_labels):
+
+  classpreds = []
+  for x in range(num_labels):
+    targets = predictions[np.where(y_test == x)[0]]
+    classpreds.append(targets)
+    
+  return classpreds
+
+def get_varparams_class_params(predictions, y_test, num_labels):
   initial_thetas = []
   initial_log_sigma2s = []
-  x = 0
+  
+  
   for x in range(num_labels):
     targets = predictions[np.where(y_test == x)[0]]
     targets = tf.stack(targets)
-    means = np.mean(targets, axis = 0)    
+    means = np.mean(targets, axis = 0)          
     initial_thetas.append(means[0])
     initial_log_sigma2s.append(means[1])
 

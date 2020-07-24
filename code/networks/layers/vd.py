@@ -14,7 +14,7 @@ ALPHA = 8.
 class VarDropout(Layer):
   def __init__(self,
                num_outputs,
-               thresh = 3.,
+               thresh = 8.,
                activation = None,
                train_clip = True,
                use_bias = True,
@@ -34,13 +34,13 @@ class VarDropout(Layer):
                             initializer=tf.initializers.RandomNormal(),
                             trainable=True)
 
-    self.b = self.add_weight('b',shape = (self.num_outputs,),
-                            initializer=tf.initializers.RandomNormal(),
-                            trainable=True)                            
-
     self.log_sigma2 = self.add_weight('log_sigma2',shape = kernel_shape,
                             initializer=tf.initializers.Constant(-10.),
                             trainable=True)
+
+    self.b = self.add_weight('b',shape = (self.num_outputs,),
+                            initializer=tf.initializers.RandomNormal(),
+                            trainable=True)                            
     
     self.step = tf.Variable (0.,
                             name='step', 
@@ -51,7 +51,7 @@ class VarDropout(Layer):
     log_alpha = tf.clip_by_value(self.log_sigma2 - tf.math.log(tf.square(self.theta) + EPSILON),-ALPHA,ALPHA)
     clip_mask = tf.less(log_alpha, self.thresh)
     self.step = self.step.assign_add(.001)
-    self.step = self.step.assign(tf.maximum(1.,self.step))
+    self.step = self.step.assign(tf.minimum(1.,self.step))
 
 
     if not training:
@@ -60,17 +60,21 @@ class VarDropout(Layer):
       loss = 0.
 
     else:
-      theta = tf.identity(self.theta)
-      if self.train_clip:
-        theta = tf.where(clip_mask, theta, 0.)
+      if self.step < 1.:
+        x =  tf.matmul(inputs, self.theta)
+        loss = 0.
+      else:
+        theta = tf.identity(self.theta)
+        if self.train_clip:
+          theta = tf.where(clip_mask, theta, 0.)
 
-      mu = tf.matmul(inputs, theta)
-      si = tf.sqrt(tf.matmul(tf.square(inputs), tf.exp(log_alpha)) + EPSILON)
-      x  = tf.random.normal(tf.shape(mu),mu,si)
+        mu = tf.matmul(inputs, theta)
+        si = tf.sqrt(tf.matmul(tf.square(inputs), tf.exp(log_alpha)) + EPSILON)
+        x  = tf.random.normal(tf.shape(mu),mu,si)
   
-      # add loss      
-      loss = self.negative_dkl(theta, self.log_sigma2) / 49500  
-      loss = loss * self.step
+        # add loss     
+        loss = self.negative_dkl(theta, self.log_sigma2) / 60000  
+        loss = loss * self.step
 
 
     self.add_loss(loss) 

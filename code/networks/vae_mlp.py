@@ -35,7 +35,7 @@ class Sampling(layers.Layer):
 
 class  ProbabilityDropout(layers.Layer):
   def __init__( self, 
-                zero_point = 1e-10,
+                zero_point = 1e-3,
                 **kwargs):
     super(ProbabilityDropout, self).__init__(**kwargs)
     self.zero_point = zero_point
@@ -62,7 +62,7 @@ class  ProbabilityDropout(layers.Layer):
       # computes drop probability
       def dropprob(p):
         p_range = [K.min(p,axis = -1),K.max(p, axis = -1)]
-        p = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(p, p_range, nbins = self.num_outputs),dtype=tf.float32))
+        p = tf.nn.sigmoid(tf.cast(tf.histogram_fixed_width(p, p_range, nbins = self.num_outputs),dtype=tf.float32))
         return p
 
       probs = tf.map_fn(dropprob, z)
@@ -73,7 +73,7 @@ class  ProbabilityDropout(layers.Layer):
       
       # scales output after zers to encourage sum to be similar to sum before zeroing out connections
       scale_factor = tf.cast(1 / multiplier,tf.float32)
-      return x * probs / scale_factor
+      return x * probs
     return x
 
   def get_config(self):
@@ -126,10 +126,11 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
 
   encoder_input = encoder.get_layer("encoder_input").input
   z_mean, z_var, z = encoder(encoder_input)
-  x = layers.Dense(mlp_hidden_dim, activation='elu')(encoder_input)
+  x = layers.Dense(mlp_hidden_dim, activation='relu')(encoder_input)
   x = ProbabilityDropout()([z_mean,z_var,x])
-  x = layers.Dense(mlp_hidden_dim, activation='elu')(x)
+  x = layers.Dense(mlp_hidden_dim, activation='relu')(x)
   x = ProbabilityDropout()([z_mean,z_var,x])
+  x = layers.Dense(mlp_hidden_dim, activation='relu')(x)
   out = layers.Dense(num_labels)(x)
   
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
@@ -138,12 +139,12 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
   return vae_mlp
   
 intermediate_dim = 512
-mlp_hidden_dim = 512
+mlp_hidden_dim = 300
 batch_size = 128
 latent_dim = 2
-vae_epochs = 10
+vae_epochs = 20
 epochs = 10
-dataset = 'mnist'
+dataset = 'cifar10'
 fix_encoder = False
 log_dir = "logs\\fit\\" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -178,7 +179,7 @@ if __name__ == '__main__':
   vae.summary()
 
   # Add KL divergence regularization loss.
-  reconstruction_loss = tf.keras.losses.mean_squared_error(original_inputs, outputs)
+  reconstruction_loss = tf.keras.losses.mean_squared_logarithmic_error(original_inputs, outputs)
   reconstruction_loss *= original_dim
   
   kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
@@ -208,7 +209,7 @@ if __name__ == '__main__':
   loss_fn = tf.losses.CategoricalCrossentropy(from_logits = True)
   vae_mlp.compile(loss=loss_fn,
               optimizer="adam",
-              metrics=['acc'])
+              metrics=[keras.metrics.CategoricalAccuracy()])
 
   tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, 
                                                   histogram_freq = 2,
@@ -220,8 +221,11 @@ if __name__ == '__main__':
 
   vae_mlp.fit(x_train, y_train,
             batch_size=batch_size,
-            epochs=epochs, validation_split=.01)
-
+            epochs=epochs, 
+            validation_split=.01,
+            shuffle = True,
+            callbacks=[tensorboard_cb],
+            verbose=1)
 
   # score trained model
   scores = vae_mlp.evaluate(x_test,
