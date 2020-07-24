@@ -336,7 +336,8 @@ def create_model(
                 x_train, 
                 initial_values, 
                 num_labels, 
-                encoder, 
+                encoder,
+                decoder, 
                 loss_fn ,
                 model_type,
                 encodings = None,                
@@ -432,7 +433,6 @@ def create_model(
     model = Model(model_input, model_out, name = _md.model_name)
     return model    
 
-
   elif model_type == 'pdf':
     print('Building pdf Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
@@ -522,6 +522,39 @@ def create_model(
       model.add_loss(kl_loss)
     
     return model
+
+  elif model_type == 'mlp-stack2':
+    print('Building Encoder-MLP Stack2')
+    input_dim = output_dim = x_train.shape[-1]
+
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    z_mean, z_log_var, z = encoder(model_input)
+    decoder_out = decoder(z)
+
+    x = Dense(300,activation = 'relu')(z)
+    x = Dense(300,activation = 'relu')(x)
+    x = Dense(300,activation = 'relu')(x)
+    x = Dropout(dropout_rate)(x)
+    model_out = Dense(num_labels, name=_md.model_name)(x)
+    
+    model = Model(model_input, [model_out,decoder_out], name =_md.model_name  )
+
+    reconstruction_loss = losses.mean_squared_logarithmic_error(model_input, decoder_out)
+    reconstruction_loss *= model_input    
+
+    kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
+    kl_loss = tf.reduce_sum(kl_loss, axis=-1)
+    kl_loss *= -0.5
+
+    # Add loss to model
+    vae_loss = tf.reduce_mean(reconstruction_loss + kl_loss)
+    model.compile(_md.optimizer,
+          loss = [tf.keras.losses.CategoricalCrossentropy(from_logits = True),vae_loss], 
+          metrics = _md.metrics,
+          experimental_run_tf_function = False)
+
+    return model
+
 
   elif model_type == 'conv-stack':
     print('Building Encoder-CONV Stack')
@@ -675,9 +708,6 @@ layer_losses = True
 # Settings
 #
 
-def myLoss(y_true,y_pred,_):
-  return tf.nn.softmax_cross_entropy_with_logits(y_true,y_pred)
-
 class VaeSettings(object):
   model_type = 'ref'
   global_kld = True
@@ -699,12 +729,12 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'dense_floor'
+  model_type = 'mlp-stack2'
   zero_point = .09
   
   kld_loss = False
   enc_trainable = True
-  #loss_fn = myLoss
+  
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.InverseTimeDecay(
     .001,
@@ -803,7 +833,7 @@ if __name__ == '__main__':
                 x_train, 
                 initial_values, 
                 num_labels, 
-                enc, 
+                enc, dec,
                 _md.loss_fn ,
                 _md.model_type,
                 encodings = encodings,                
@@ -813,7 +843,6 @@ if __name__ == '__main__':
 
   model.compile(_md.optimizer,
             loss = _md.loss_fn, 
-            #loss =  tf.nn.softmax_cross_entropy_with_logits,
             metrics = _md.metrics,
             experimental_run_tf_function = False)
 

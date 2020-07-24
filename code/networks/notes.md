@@ -21,7 +21,7 @@
 
 ## mlp-stack 
 
-- parameters of prior network seemed to influence convergence of sibsequent network
+- parameters of prior network seemed to influence convergence of subsequent network
 - Features not fed into Dense
   - 48% on cifar 10 300,300,100
   - 49% with overfitting on 300,300,300
