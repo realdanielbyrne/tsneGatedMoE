@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import Input,Dense, Dropout, Reshape
-from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average, Activation
+from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average, Activation,BatchNormalization
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
@@ -217,11 +217,11 @@ class CGD(Layer):
     self.activation = activation
     self.use_bias = use_bias
     self.zero_point = zero_point
-    initial_theta, initial_log_sigma2 = initial_values
+    mean, var = initial_values
 
-    # define static lookups for pre-calculated datasets
+
     self.initial_theta = initial_theta
-    self.initial_log_sigma2 = initial_log_sigma2
+    self.initial_log_sigma2 = tf.sqrt(initial_log_sigma2)
 
   def build(self, input_shape):
     kernel_shape = (input_shape[-1],self.num_outputs)
@@ -258,7 +258,7 @@ class CGD(Layer):
 
 class PD(Layer):
   def __init__( self,
-                p,
+                initial_values,
                 num_outputs = None,
                 activation = None,
                 zero_point = 1e-2,
@@ -269,7 +269,9 @@ class PD(Layer):
     self.activation = activation
     self.zero_point = zero_point
     self.use_bias = use_bias
-    self.p = p
+    mean, var = initial_values
+    self.mean = mean
+    self.stddev = tf.sqrt(var)
 
   def build(self, input_shape):
 
@@ -279,25 +281,21 @@ class PD(Layer):
     kernel_shape = (input_shape[-1],self.num_outputs)
 
     self.w = self.add_weight('w', shape = kernel_shape,
-                            initializer=tf.initializers.TruncatedNormal(),
+                            initializer=tf.initializers.RandomNormal(),
                             trainable = True)                              
 
     if self.use_bias:
       self.b = self.add_weight('b', shape = (self.num_outputs,),
                               initializer=tf.initializers.RandomNormal(),
                               trainable=True)    
-    
-    
-    num_outputs = self.num_outputs
-    s = tf.keras.activations.sigmoid(self.p)
-    p_range = [K.min(s),K.max(s)]
-    pfilt = tf.nn.softmax(tf.cast(tf.histogram_fixed_width(s, p_range, nbins = num_outputs),dtype = tf.float32))     
-    pfilt2 = tf.transpose(tf.reshape(pfilt,(-1,1)))
-    filt = tf.repeat(pfilt2, repeats = input_shape[-1], axis = 0)
-    self.filter = tf.Variable(filt, trainable = False)
+
+    self.f = self.add_weight('f', shape = kernel_shape,
+                            initializer=tf.initializers.RandomNormal(),
+                            trainable = True)                              
 
   def call(self, inputs):
-    x = tf.matmul(inputs,self.w * self.filter)
+    f = tf.nn.sigmoid(tf.random.normal(tf.shape(self.w), mean=self.mean, stddev=self.stddev))
+    x = tf.matmul(inputs,self.w * f)
     
     if self.activation is not None:
       x = self.activation(x)    
@@ -369,8 +367,8 @@ def create_model(
     y = []
     for i in range(num_labels):        
       x = Dense(300, kernel_initializer=tf.keras.initializers.RandomNormal(initial_values[i][0],initial_values[i][1]), activation='relu')(model_input)
-      x = Dense(300, kernel_initializer=tf.keras.initializers.RandomNormal(initial_values[i][0],initial_values[i][1]),activation = tf.nn.relu, name = model_type+'_d1'+str(i))(x)
-      x = Dense(300, kernel_initializer=tf.keras.initializers.RandomNormal(initial_values[i][0],initial_values[i][1]),activation = tf.nn.relu, name = model_type+'_d2'+str(i))(x)
+      x = Dense(300,activation = tf.nn.relu)(x)
+      x = Dense(300,activation = tf.nn.relu)(x)
       y.append(x)
 
     x = Concatenate()(y)    
@@ -379,6 +377,22 @@ def create_model(
     model = Model(model_input, model_out, name = _md.model_name)
     return model
 
+  elif model_type == 'gatedmoe_no_init':
+    print('Building gatedmoe Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
+    
+    y = []
+    for i in range(num_labels):        
+      x = Dense(300, activation = 'relu', name = "Gate"+str(i))(model_input)
+      x = Dense(300, activation = 'relu')(x)
+      x = Dense(300, activation = 'relu')(x)
+      y.append(x)
+
+    x = Concatenate()(y)    
+    x = Dense(200, activation = tf.nn.relu, )(x)
+    model_out = Dense(num_labels, name=model_type)(x)
+    model = Model(model_input, model_out, name = _md.model_name)
+    return model
   elif model_type == 'vdmoe':
     print('Building vdmoe Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
@@ -410,25 +424,29 @@ def create_model(
   elif model_type == 'dense_ref':
     print('Building dense_ref Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
-    x = Dense(300, activation='relu',name = model_type+'_d1')(model_input)
-    x = Dense(300, activation='relu',name = model_type+'_d2')(x)
-    x = Dense(300, activation='relu',name = model_type+'_d3')(x)
-    x = Dropout(.2)(x)
+    x = Dropout(.2)(model_input)
+    x = Dense(300, activation='relu',name = model_type+'_d1')(x)
+    x = Dropout(.4)(x)
+    x = Dense(100, activation='relu',name = model_type+'_d2')(x)
+    x = Dropout(.4)(x)
+    x = Dense(100, activation='relu',name = model_type+'_d3')(x)
+    x = Dropout(.4)(x)
 
     model_out = Dense(num_labels, name = model_type)(x)
     model = Model(model_input, model_out, name = _md.model_name)
     return model    
 
   elif model_type == 'dense_floor':
-    print('Building dense_fkoor Model')
-    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data') 
-    x = Dense(1000, activation='relu',name = model_type+'_d1')(model_input)
-    x = Floor(.2)(x)
-    x = Dense(500, activation='relu',name = model_type+'_d3')(x)
-    x = Floor(.2)(x)
-    x = Dense(500, activation='relu',name = model_type+'_d4')(x)
-    x = Floor(.3)(x)
-    
+    print('Building dense_floor Model')
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
+    x = Floor(.01)(model_input)
+    x = Dense(300, activation='relu',name = model_type+'_d1')(x)
+    x = Floor(.4)(x)
+    x = Dense(100, activation='relu',name = model_type+'_d2')(x)
+    x = Floor(.4)(x)
+    x = Dense(100, activation='relu',name = model_type+'_d3')(x)
+    x = Floor(.4)(x)
+
     model_out = Dense(num_labels, name = model_type)(x)
     model = Model(model_input, model_out, name = _md.model_name)
     return model    
@@ -455,11 +473,28 @@ def create_model(
     y = []
     x = Dense(1000, activation='relu')(xin)
     for i in range(num_labels):              
-      x = PD(classp[i], 300)(x)    
+      x = PD(initial_values[i], 300,activation=tf.nn.relu)(x)          
       y.append(x)
     
     x = Concatenate()(y)
-    x = Dense(300, activation='relu')(xin)
+    x = Dense(300, activation='relu')(x)
+    x = Dropout(.2)(x)
+    xout = Dense(10)(x)
+    model = Model(xin, xout, name = _md.model_name)
+    return model
+
+  elif model_type == 'classpd_nopd':
+    print('Building Class Probability Dropout MLP Model')
+    xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
+    
+    y = []
+    x = Dense(1000, activation='relu')(xin)
+    for i in range(num_labels):              
+      x = Dense(300, activation='relu')(x)  
+      y.append(x)
+    
+    x = Concatenate()(y)
+    x = Dense(300, activation='relu')(x)
     x = Dropout(.2)(x)
     xout = Dense(10)(x)
     model = Model(xin, xout, name = _md.model_name)
@@ -469,13 +504,13 @@ def create_model(
     print('Building Probability Dropout MLP Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='model_input')
     
-    x = PD(encodings, 300, name= _md.model_name+'_pd1')(model_input)    
+    x = PD(initial_values, 300, name= _md.model_name+'_pd1')(model_input)    
     x = Activation('relu')(x)
     
-    x = PD(encodings, 300, name= _md.model_name+'_pd2')(x)
+    x = PD(initial_values, 300, name= _md.model_name+'_pd2')(x)
     x = Activation('relu')(x)
     
-    x = PD(encodings, 300, name= _md.model_name+'_pd3')(x)
+    x = PD(initial_values, 300, name= _md.model_name+'_pd3')(x)
     x = Activation('relu')(x)
 
     model_out = Dense(num_labels,name= _md.model_name+"_output")(x)
@@ -485,18 +520,15 @@ def create_model(
   elif model_type == 'sampling_dropout':
     print('Building sampling_dropout Model')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _1, _2, z = encoder(model_input)
-    z_mean = z[:,0]
-    z_log_var = z[:,1]
-
+    _, _, z = encoder(model_input)
+    z_mean, z_var = tf.nn.moments(z,axes = -1)
+    
     x = Dense(300,activation = 'relu',name = _md.model_name+'_d1')(model_input)
-    x = SD(name = _md.model_name+'_sd1')([x,z_mean,z_log_var])
-    x = Activation('relu')(x)
+    x = SD()([x,z_mean,z_var])
     x = Dense(300, activation = 'relu',name = _md.model_name+'_d2')(x)
-    x = SD(name = model_type+'_sd2')([x,z_mean,z_log_var])
-    x = Activation('relu')(x)
-    x = Dense(100, activation = 'relu',name = _md.model_name+'_d3')(x)
-    x = SD(name = model_type+'_sd2')([x,z_mean,z_log_var])
+    x = SD()([x,z_mean,z_var])
+    x = Dense(300, activation = 'relu',name = _md.model_name+'_d3')(x)
+    x = SD()([x,z_mean,z_var])
 
     model_out = Dense(num_labels, name=_md.model_name+"_out")(x)
     model = Model(model_input, model_out, name = _md.model_name)    
@@ -555,14 +587,13 @@ def create_model(
 
     return model
 
-
-  elif model_type == 'conv-stack':
+  elif model_type == 'conv_ref':
     print('Building Encoder-CONV Stack')
-    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-    _,_, z = encoder(model_input)
 
     model = Sequential (
-      Conv2D(input_shape=x_train[0,:,:,:].shape, filters=96, kernel_size=(3,3)),
+      Input(x_train.shape[-1]),
+      Reshape(target_shape = (28, 28, 1)),
+      Conv2D(filters=96, kernel_size=(3,3)),
       Activation('relu'),
       Conv2D(filters=96, kernel_size=(3,3), strides=2),
       Activation('relu'),
@@ -580,11 +611,7 @@ def create_model(
     )
     model.name = _md.model_name
 
-    if _md.kld_loss:
-      kl_loss = 1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var)
-      kl_loss = tf.reduce_sum(kl_loss, axis=-1)
-      kl_loss *= -0.5
-      model.add_loss(kl_loss)
+
     
     return model
 
@@ -592,10 +619,12 @@ def create_model(
     print('Building Reference small conv Model')
     i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
 
-    if _md.dataset == 'mnist':
-      x = Reshape(target_shape = (28, 28, 1))(i)
+
+    x = Reshape(target_shape = (28, 28, 1))(i)
     x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
     x = MaxPooling2D(pool_size=(2, 2))(x)
+    x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
+    x = Floor(0.4)(x)
     x = Flatten()(x)
     x = Dense(10)(x)
     
@@ -701,7 +730,7 @@ BATCH_SIZE = 128
 VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
 BUILD_VAE = False
-dataset = 'mnist'
+dataset = 'fashion_mnist'
 layer_losses = True
 
 ##########################################################################
@@ -714,7 +743,7 @@ class VaeSettings(object):
 
   loss = 'msle'  
   intermediate = 512
-  latent = 2
+  latent = 16
   optimizer = tf.keras.optimizers.Adam()
   act = 'relu'
 
@@ -729,17 +758,19 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'mlp-stack2'
-  zero_point = .09
-  
+  model_type = 'dense_floor'
+  zero_point = .4
+  dropout_rate = .4
+
   kld_loss = False
   enc_trainable = True
+  
   
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.InverseTimeDecay(
     .001,
-    decay_steps=100000,
-    decay_rate=0.99,
+    decay_steps=10000,
+    decay_rate=1,
     staircase=True
   ))
   metrics = [keras.metrics.CategoricalAccuracy()]
@@ -767,9 +798,10 @@ if __name__ == '__main__':
   # load data
   if dataset == 'mnist':
     (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_minst_data(True)
-  elif dataset == 'cifar10':
+  elif dataset == 'cifar10':    
     (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_cifar10_data(True)
-
+  elif dataset == 'fashion_mnist':    
+    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_fashion_mnist_data(True)
 
   ####################################################################
   # vae
@@ -784,7 +816,6 @@ if __name__ == '__main__':
                                                 update_freq = 'epoch',
                                                 profile_batch = [2,10]
                                                 )
-
 
   # build
   if BUILD_VAE:
@@ -847,7 +878,7 @@ if __name__ == '__main__':
             experimental_run_tf_function = False)
 
   model.summary()
-  plot_model(model, to_file = "plots/"+_md.model_name +'.png', show_shapes = True)
+  plot_model(model, to_file = "plots/"+_md.model_name +'.png', show_shapes = False)
   
   ####################################################################
   # Train

@@ -10,7 +10,7 @@ from tensorflow import keras
 
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import backend as K
-from tensorflow.keras.datasets import cifar10, mnist
+from tensorflow.keras.datasets import cifar10, mnist, fashion_mnist
 
 EPSILON = 1e-8
 
@@ -56,13 +56,15 @@ def get_varparams_class_params(predictions, y_test, num_labels):
   for x in range(num_labels):
     targets = predictions[np.where(y_test == x)[0]]
     targets = tf.stack(targets)
-    means = np.mean(targets, axis = 0)          
-    initial_thetas.append(means[0])
-    initial_log_sigma2s.append(means[1])
+
+    mean, var = tf.nn.moments(targets, axes = 0)
+    rmean = np.mean(mean)
+    rvar = np.mean(var)
+    initial_thetas.append(rmean)
+    initial_log_sigma2s.append(rvar )
 
   initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
   return initial_values
-
 
 def load_minst_data(categorical):
   # load mnist dataset
@@ -87,6 +89,32 @@ def load_minst_data(categorical):
     y_test_cat = y_test
 
   return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
+
+def load_fashion_mnist_data(categorical):
+  # load mnist dataset
+  (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
+    
+  # compute the number of labels
+  num_labels = len(np.unique(y_train))
+
+  # image dimensions (assumed square)
+  image_size = x_train.shape[1]
+  input_size = image_size * image_size
+
+  # resize and normalize
+  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255.
+  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255.
+
+  if categorical:
+    # Convert class vectors to binary class matrices ( One Hot Encoding )
+    y_train = to_categorical(y_train)
+    y_test_cat = to_categorical(y_test)
+  else:
+    y_test_cat = y_test
+
+  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
+
+
 
 def load_cifar10_data(categorical):
   # load the CIFAR10 data

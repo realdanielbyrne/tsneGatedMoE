@@ -31,7 +31,6 @@
 
 ## SD
 
-
 MNIST
 With softmax
   - poor performance, even on MNIST with encoder locked, 
@@ -66,7 +65,7 @@ CIFAR10
 Creates a dropout filter for each class by taking the softmax of the x_test in a MOE structure
 
 MNIST
-- Training gets stuck at 97% even with regularization.
+- Works
 
 CIFAR10
 - Tried multiple architectures
@@ -95,3 +94,9 @@ Struggles to achieve over 25%
 initialization strategy seems to hurt not help
 
 ## cgd_model
+
+
+## sampling dropout
+fashion mnist 85%
+mnist 96.6%
+cifar10 no overfitting, but slow learning. struggles to achieve 27%
