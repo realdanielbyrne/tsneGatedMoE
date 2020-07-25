@@ -174,8 +174,6 @@ def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
   val_accuracy.reset_states()
   print("Test acc: %.4f" % (float(val_acc),))
 
-
-
 class Pdf(tf.keras.initializers.Initializer):
 
   def __init__(self, mean, stddev):
@@ -188,7 +186,6 @@ class Pdf(tf.keras.initializers.Initializer):
 
   def get_config(self):  # To support serialization
     return {'mean': self.mean, 'stddev': self.stddev}
-
 
 class Kernel(tf.keras.initializers.Initializer):
 
@@ -288,10 +285,6 @@ class PD(Layer):
       self.b = self.add_weight('b', shape = (self.num_outputs,),
                               initializer=tf.initializers.RandomNormal(),
                               trainable=True)    
-
-    self.f = self.add_weight('f', shape = kernel_shape,
-                            initializer=tf.initializers.RandomNormal(),
-                            trainable = True)                              
 
   def call(self, inputs):
     f = tf.nn.sigmoid(tf.random.normal(tf.shape(self.w), mean=self.mean, stddev=self.stddev))
@@ -427,9 +420,9 @@ def create_model(
     x = Dropout(.2)(model_input)
     x = Dense(300, activation='relu',name = model_type+'_d1')(x)
     x = Dropout(.4)(x)
-    x = Dense(100, activation='relu',name = model_type+'_d2')(x)
+    x = Dense(300, activation='relu',name = model_type+'_d2')(x)
     x = Dropout(.4)(x)
-    x = Dense(100, activation='relu',name = model_type+'_d3')(x)
+    x = Dense(300, activation='relu',name = model_type+'_d3')(x)
     x = Dropout(.4)(x)
 
     model_out = Dense(num_labels, name = model_type)(x)
@@ -442,9 +435,9 @@ def create_model(
     x = Floor(.01)(model_input)
     x = Dense(300, activation='relu',name = model_type+'_d1')(x)
     x = Floor(.4)(x)
-    x = Dense(100, activation='relu',name = model_type+'_d2')(x)
+    x = Dense(300, activation='relu',name = model_type+'_d2')(x)
     x = Floor(.4)(x)
-    x = Dense(100, activation='relu',name = model_type+'_d3')(x)
+    x = Dense(300, activation='relu',name = model_type+'_d3')(x)
     x = Floor(.4)(x)
 
     model_out = Dense(num_labels, name = model_type)(x)
@@ -471,7 +464,7 @@ def create_model(
     xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
     
     y = []
-    x = Dense(1000, activation='relu')(xin)
+    x = Dense(300, activation='relu')(xin)
     for i in range(num_labels):              
       x = PD(initial_values[i], 300,activation=tf.nn.relu)(x)          
       y.append(x)
@@ -730,7 +723,7 @@ BATCH_SIZE = 128
 VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
 BUILD_VAE = False
-dataset = 'fashion_mnist'
+dataset = 'cifar10'
 layer_losses = True
 
 ##########################################################################
@@ -758,7 +751,7 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'dense_floor'
+  model_type = 'classpd'
   zero_point = .4
   dropout_rate = .4
 
@@ -903,7 +896,7 @@ if __name__ == '__main__':
   ####################################################################
   # Evaluate
   #
-  score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE)  
+  score = model.evaluate(x = x_test, y = y_test_cat, batch_size=BATCH_SIZE, callbacks=[tensorboard_cb])  
   print('\n')
   print(str(_md.model_name) + ' Model Test Loss : ', score[0])
   print(str(_md.model_name) + ' Test Accuracy : %.1f%%' % (100.0 * score[1]))
