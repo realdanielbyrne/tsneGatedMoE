@@ -465,30 +465,54 @@ def create_model(
     
     y = []
     x = Dense(300, activation='relu')(xin)
+    x = Dropout(.2)(x)
     for i in range(num_labels):              
       x = PD(initial_values[i], 300,activation=tf.nn.relu)(x)          
+      
       y.append(x)
     
     x = Concatenate()(y)
     x = Dense(300, activation='relu')(x)
-    x = Dropout(.2)(x)
+    x = Dropout(.4)(x)
     xout = Dense(10)(x)
     model = Model(xin, xout, name = _md.model_name)
     return model
 
-  elif model_type == 'classpd_nopd':
+  elif model_type == 'classpd_floor':
     print('Building Class Probability Dropout MLP Model')
     xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
     
     y = []
-    x = Dense(1000, activation='relu')(xin)
+    x = Dense(300, activation='relu')(xin)
+    x = Floor(.01)(x)
+    for i in range(num_labels):              
+      x = PD(initial_values[i], 300,activation=tf.nn.relu)(x)          
+      x = Dense(300, activation='relu')(x)       
+      x = Floor(.3)(x)
+      y.append(x)
+    
+    x = Concatenate()(y)
+    x = Dense(300, activation='relu')(x)
+    x = Floor(.3)(x)
+    xout = Dense(10)(x)
+    model = Model(xin, xout, name = _md.model_name)
+    return model
+
+
+  elif model_type == 'class_ref':
+    print('Building Class Probability Dropout MLP Model')
+    xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
+    
+    y = []
+    x = Dense(300, activation='relu')(xin)
+    x = Dropout(.2)(x)
     for i in range(num_labels):              
       x = Dense(300, activation='relu')(x)  
       y.append(x)
     
     x = Concatenate()(y)
     x = Dense(300, activation='relu')(x)
-    x = Dropout(.2)(x)
+    x = Dropout(.4)(x)
     xout = Dense(10)(x)
     model = Model(xin, xout, name = _md.model_name)
     return model
@@ -723,7 +747,7 @@ BATCH_SIZE = 128
 VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
 BUILD_VAE = False
-dataset = 'cifar10'
+dataset = 'fashion_mnist'
 layer_losses = True
 
 ##########################################################################
@@ -751,7 +775,7 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'classpd'
+  model_type = 'classpd_floor'
   zero_point = .4
   dropout_rate = .4
 
