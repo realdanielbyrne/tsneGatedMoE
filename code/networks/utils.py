@@ -52,7 +52,6 @@ def get_varparams_class_params(predictions, y_test, num_labels):
   initial_thetas = []
   initial_log_sigma2s = []
   
-  
   for x in range(num_labels):
     targets = predictions[np.where(y_test == x)[0]]
     targets = tf.stack(targets)
@@ -118,7 +117,7 @@ def load_fashion_mnist_data(categorical):
 
 def load_cifar10_data(categorical):
   # load the CIFAR10 data
-  K.set_image_data_format('channels_first')
+  K.set_image_data_format('channels_last')
   (x_train, y_train), (x_test, y_test) = cifar10.load_data()
   n, channel, row, col = x_train.shape
 

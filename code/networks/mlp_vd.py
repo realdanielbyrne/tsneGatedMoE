@@ -498,7 +498,6 @@ def create_model(
     model = Model(xin, xout, name = _md.model_name)
     return model
 
-
   elif model_type == 'class_ref':
     print('Building Class Probability Dropout MLP Model')
     xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')     
@@ -605,38 +604,54 @@ def create_model(
     return model
 
   elif model_type == 'conv_ref':
-    print('Building Encoder-CONV Stack')
+    print('Building Reference CONV model')
 
-    model = Sequential (
-      Input(x_train.shape[-1]),
-      Reshape(target_shape = (28, 28, 1)),
-      Conv2D(filters=96, kernel_size=(3,3)),
-      Activation('relu'),
-      Conv2D(filters=96, kernel_size=(3,3), strides=2),
-      Activation('relu'),
-      Dropout(0.2),
-      Conv2D(filters=192, kernel_size=(3,3)),
-      Activation('relu'),
-      Conv2D(filters=192, kernel_size=(3,3), strides=2),
-      Activation('relu'),
-      Dropout(0.5),
-      Flatten(),
-      BatchNormalization(),
-      Dense(256),
-      Activation('relu'),
-      Dense(num_labels, activation="softmax")
-    )
-    model.name = _md.model_name
+    print('Building Reference Conv Model with Dropout')
+    xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    if dataset != 'cifar10':
+      x = Reshape(target_shape = (28, 28, 1))(xin)
+    else:
+      x = Reshape(target_shape = (32, 32, 3))(xin)
 
+    x = Conv2D(filters = 96, kernel_size=(3, 3), activation='relu')(x)
+    x = Dropout(0.2)(x)
+    x = Conv2D(filters=192, kernel_size=(3,3), activation='relu')(x)
+    x = Conv2D(filters=192, kernel_size=(3,3), activation='relu', strides = 2)(x)    
+    x = Dropout(0.5)(x)
+    x = Flatten()(x)
+    x = BatchNormalization()(x)
+    x = Dense(256, activation='relu')(x)
+    xout = Dense(num_labels)(x)
 
-    
+    model = Model(xin, xout, name = _md.model_name)
+    return model
+
+  elif model_type == 'conv_floor':
+    print('Building Conv Model with Floor')
+    xin = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    if dataset != 'cifar10':
+      x = Reshape(target_shape = (28, 28, 1))(xin)
+    else:
+      x = Reshape(target_shape = (32, 32, 3))(xin)
+
+    x = Conv2D(filters = 96, kernel_size=(3, 3), activation=tf.nn.leaky_relu)(x)
+    x = Floor(0.01)(x)
+    x = Conv2D(filters=192, kernel_size=(3,3), activation=tf.nn.leaky_relu)(x)
+    x = MaxPooling2D((2,2))(x)
+    x = Conv2D(filters=192, kernel_size=(3,3), activation=tf.nn.leaky_relu, strides = 2)(x)    
+    x = MaxPooling2D((2,2))(x)
+    x = Flatten()(x)
+    x = BatchNormalization()(x)
+    x = Dense(256, activation=tf.nn.leaky_relu)(x)
+    x = Floor(0.4)(x)
+    xout = Dense(num_labels)(x)
+
+    model = Model(xin, xout, name = _md.model_name)
     return model
 
   elif model_type == 'smconv_ref':
     print('Building Reference small conv Model')
     i = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
-
-
     x = Reshape(target_shape = (28, 28, 1))(i)
     x = Conv2D(filters = num_labels, kernel_size=(3, 3), activation='relu')(x)
     x = MaxPooling2D(pool_size=(2, 2))(x)
@@ -742,12 +757,12 @@ def create_vae(x_train):
 
 
 # Training settings
-EPOCHS = 30
+EPOCHS = 20
 BATCH_SIZE = 128
 VAE_EPOCHS = 20
 CUSTOM_TRAIN = False
 BUILD_VAE = False
-dataset = 'fashion_mnist'
+dataset = 'cifar10'
 layer_losses = True
 
 ##########################################################################
@@ -775,7 +790,7 @@ class VaeSettings(object):
 _vae = VaeSettings()  
 
 class ModelSettings(object):
-  model_type = 'classpd_floor'
+  model_type = 'conv_floor'
   zero_point = .4
   dropout_rate = .4
 
