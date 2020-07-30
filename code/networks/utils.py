@@ -14,17 +14,7 @@ from tensorflow.keras.datasets import cifar10, mnist, fashion_mnist
 
 EPSILON = 1e-8
 
-#######################################################
-# handy function to keep track of sparsity
-def sparseness(log_alphas, thresh=3):
-    N_active, N_total = 0., 0.
-    for la in log_alphas:
-        m = tf.cast(tf.less(la, thresh), tf.float32)
-        n_active = tf.reduce_sum(m)
-        n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
-        N_active += n_active
-        N_total += n_total
-    return 1.0 - N_active/N_total
+
 
 def get_varparams_class_samples(predictions, y_test, num_labels):
   initial_thetas = []
@@ -65,71 +55,35 @@ def get_varparams_class_params(predictions, y_test, num_labels):
   initial_values = np.transpose(np.stack([initial_thetas,initial_log_sigma2s]))
   return initial_values
 
-def load_minst_data(categorical):
-  # load mnist dataset
-  (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+def load_dataset(dataset, categorical):
+  if dataset == 'mnist' or dataset == 'fashion_mnist' :
+    if dataset == 'mnist':
+      (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    elif dataset == 'fashion_mnist':
+      (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
+
+    # image dimensions (assumed square)
+    image_size = x_train.shape[1]
+    input_size = image_size * image_size
+
+    # resize and normalize
+    x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255.
+    x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255.
     
-  # compute the number of labels
-  num_labels = len(np.unique(y_train))
-
-  # image dimensions (assumed square)
-  image_size = x_train.shape[1]
-  input_size = image_size * image_size
-
-  # resize and normalize
-  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255.
-  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255.
-
-  if categorical:
-    # Convert class vectors to binary class matrices ( One Hot Encoding )
-    y_train = to_categorical(y_train)
-    y_test_cat = to_categorical(y_test)
-  else:
-    y_test_cat = y_test
-
-  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
-
-def load_fashion_mnist_data(categorical):
-  # load mnist dataset
-  (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
-    
-  # compute the number of labels
-  num_labels = len(np.unique(y_train))
-
-  # image dimensions (assumed square)
-  image_size = x_train.shape[1]
-  input_size = image_size * image_size
-
-  # resize and normalize
-  x_train = np.reshape(x_train, [-1, input_size]).astype('float32') / 255.
-  x_test = np.reshape(x_test, [-1, input_size]).astype('float32') / 255.
-
-  if categorical:
-    # Convert class vectors to binary class matrices ( One Hot Encoding )
-    y_train = to_categorical(y_train)
-    y_test_cat = to_categorical(y_test)
-  else:
-    y_test_cat = y_test
-
-  return (x_train, y_train), (x_test, y_test), num_labels, y_test_cat
-
-
-
-def load_cifar10_data(categorical):
-  # load the CIFAR10 data
-  K.set_image_data_format('channels_last')
-  (x_train, y_train), (x_test, y_test) = cifar10.load_data()
-  n, channel, row, col = x_train.shape
+  elif dataset == 'cifar10':    
+    K.set_image_data_format('channels_last')
+    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+    n, channel, row, col = x_train.shape
+    x_train = x_train.reshape(-1, channel * row * col).astype('float32') / 255.
+    x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255.
 
   # compute the number of labels
   num_labels = len(np.unique(y_train))
 
-  x_train = x_train.reshape(-1, channel * row * col).astype('float32') / 255.
-  x_test = x_test.reshape(-1, channel * row * col).astype('float32') / 255.
-
   if categorical:
     # Convert class vectors to binary class matrices ( One Hot Encoding )
-    y_train = to_categorical(y_train, 10)
+    y_train = to_categorical(y_train, num_labels)
     y_test_cat = to_categorical(y_test)
   else:
     y_test_cat = y_test    
@@ -153,8 +107,6 @@ def plot_to_image(figure):
   image = tf.expand_dims(image, 0)
   return image
 
-
-
 def plot_layer_activations(model,x_test,y_test):
   
   from tensorflow.keras import backend as K
@@ -164,6 +116,17 @@ def plot_layer_activations(model,x_test,y_test):
 
   # Testing
   layer_outputs = fun([x_test, 1.])
+
+def sparseness(log_alphas, thresh=3):
+    N_active, N_total = 0., 0.
+    for la in log_alphas:
+        m = tf.cast(tf.less(la, thresh), tf.float32)
+        n_active = tf.reduce_sum(m)
+        n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
+        N_active += n_active
+        N_total += n_total
+    return 1.0 - N_active/N_total
+
 
 def layer_to_visualize(model,layer,test_image):
     '''
@@ -191,7 +154,22 @@ def layer_to_visualize(model,layer,test_image):
         ax = fig.add_subplot(n,n,i+1)
         ax.imshow(convolutions[i], cmap='gray')
 
-  
+
+
+
+#######################################################
+# handy function to keep track of sparsity
+def sparseness(log_alphas, thresh=3):
+    N_active, N_total = 0., 0.
+    for la in log_alphas:
+        m = tf.cast(tf.less(la, thresh), tf.float32)
+        n_active = tf.reduce_sum(m)
+        n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
+        N_active += n_active
+        N_total += n_total
+    return 1.0 - N_active/N_total
+
+
 #function to get activations of a layer
 def get_activations(model, layer, x_train):
     get_activations = K.function([model.layers[0].input, K.learning_phase()], [model.layers[layer].output,])
