@@ -497,8 +497,6 @@ def create_model(
     print('Building pdf Stack')
     model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
 
-
-    #x = Dense(300, kernel_initializer=Pdf(initial_values[0],initial_values[1]), activation =  'relu', name=model_type+'_d1')(model_input)
     x = Dense(300, activation =  'relu', name=_md.model_name+'_d1')(model_input)
     x = Dense(300, activation =  'relu', name=_md.model_name+'_d2')(x)
     x = Dense(300, activation =  'relu', name=_md.model_name+'_d3')(x)
@@ -521,8 +519,9 @@ def create_model(
       y.append(x)
 
     x = Concatenate()(y)
+    x = Floor()(x)
     x = Dense(300, activation='relu')(x)
-    x = Dropout(.4)(x)
+    x = Dropout(.2)(x)
     xout = Dense(10)(x)
     model = Model(xin, xout, name = _md.model_name)
     return model
@@ -591,7 +590,7 @@ def create_model(
     x = Dense(300,activation = 'relu',name = _md.model_name+'_d1')(model_input)
     x = SD()([x,z_mean,z_var])
     x = Dense(300, activation = 'relu',name = _md.model_name+'_d2')(x)
-    x = SD()([x,z_mean,z_var])
+    #x = SD()([x,z_mean,z_var])
     x = Dense(300, activation = 'relu',name = _md.model_name+'_d3')(x)
     x = SD()([x,z_mean,z_var])
 
@@ -860,12 +859,12 @@ def create_vae(x_train):
 
 
 # Training settings
-EPOCHS = 41
+EPOCHS = 20
 BATCH_SIZE = 128
-VAE_EPOCHS = 1
+VAE_EPOCHS = 10
 CUSTOM_TRAIN = False
 BUILD_VAE = False
-dataset = 'cifar10'
+dataset = 'mnist'
 layer_losses = True
 
 ##########################################################################
@@ -893,7 +892,7 @@ class VaeSettings(object):
 _vae = VaeSettings()
 
 class ModelSettings(object):
-  model_type = 'dense_floor'
+  model_type = 'classpd'
   zero_point = None
   in_zero_point = None
   dropout_rate = .2
@@ -904,10 +903,11 @@ class ModelSettings(object):
   enc_trainable = True
   use_bias = True
 
+
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.ExponentialDecay(
     .001,
-    decay_steps=10000,
+    decay_steps=3000,
     decay_rate=.96,
     staircase=False
   ))
