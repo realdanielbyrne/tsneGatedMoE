@@ -304,9 +304,13 @@ class PD(Layer):
                               initializer=tf.initializers.RandomNormal(),
                               trainable=True)
 
-  def call(self, inputs):
-    f = tf.nn.sigmoid(tf.random.normal(tf.shape(self.w), mean=self.mean, stddev=self.stddev))
-    x = tf.matmul(inputs,self.w * f)
+  def call(self, inputs, training = None):
+
+    if training is not None:
+      f = tf.nn.sigmoid(tf.random.normal(tf.shape(self.w), mean=self.mean, stddev=self.stddev))
+      x = tf.matmul(inputs,self.w * f)
+    else:
+      x = tf.matmul(inputs,self.w)
 
     if self.activation is not None:
       x = self.activation(x)
@@ -587,9 +591,9 @@ def create_model(
     _, _, z = encoder(model_input)
     z_mean, z_var = tf.nn.moments(z,axes = -1)
 
-    x = Dense(300,activation = 'relu',name = _md.model_name+'_d1')(model_input)
+    x = Dense(500,activation = 'relu',name = _md.model_name+'_d1')(model_input)
     x = SD()([x,z_mean,z_var])
-    x = Dense(300, activation = 'relu',name = _md.model_name+'_d2')(x)
+    x = Dense(500, activation = 'relu',name = _md.model_name+'_d2')(x)
     #x = SD()([x,z_mean,z_var])
     x = Dense(300, activation = 'relu',name = _md.model_name+'_d3')(x)
     x = SD()([x,z_mean,z_var])
@@ -859,11 +863,11 @@ def create_vae(x_train):
 
 
 # Training settings
-EPOCHS = 20
+EPOCHS = 100
 BATCH_SIZE = 128
 VAE_EPOCHS = 10
 CUSTOM_TRAIN = False
-BUILD_VAE = False
+BUILD_VAE = True
 dataset = 'mnist'
 layer_losses = True
 
@@ -907,9 +911,9 @@ class ModelSettings(object):
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
   optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.ExponentialDecay(
     .001,
-    decay_steps=3000,
+    decay_steps=10000,
     decay_rate=.96,
-    staircase=False
+    staircase=True
   ))
   metrics = [keras.metrics.CategoricalAccuracy()]
   act = 'relu'
