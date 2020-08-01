@@ -55,7 +55,7 @@ class Floor(Layer):
     else:
       
       if self.zero_point is None:
-        zero_point = tf.random.uniform([],0,.7)
+        zero_point = tf.random.uniform([],0,.5)
       else:
         zero_point = self.zero_point
 
