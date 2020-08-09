@@ -130,13 +130,12 @@ def create_vae_mlp(input_dim, latent_dim, num_labels, encoder):
   x = layers.Dense(mlp_hidden_dim, activation='relu')(encoder_input)
   x = ProbabilityDropout()([z_mean,z_var,x])
   x = layers.Dense(mlp_hidden_dim, activation='relu')(x)
-  x = ProbabilityDropout()([z_mean,z_var,x])
   x = layers.Dense(mlp_hidden_dim, activation='relu')(x)
+  x = ProbabilityDropout()([z_mean,z_var,x])
   out = layers.Dense(num_labels)(x)
   
   vae_mlp = Model(encoder_input, out, name="vae_mlp")
   vae_mlp.summary()
-
   return vae_mlp
   
 intermediate_dim = 512
@@ -144,19 +143,15 @@ mlp_hidden_dim = 300
 batch_size = 128
 latent_dim = 2
 vae_epochs = 20
-epochs = 10
-dataset = 'cifar10'
+epochs = 40
+dataset = 'mnist'
 fix_encoder = False
 log_dir = "logs\\fit\\" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
 if __name__ == '__main__':
 
   # load data
-  if dataset == 'mnist':
-    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_minst_data(True)
-  else:
-    (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_cifar10_data(True)
-
+  (x_train, y_train), (x_test, y_test), num_labels, y_test_cat = utils.load_dataset(dataset,True)
   original_dim = output_dim = x_train.shape[-1]
 
   # Define encoder model.

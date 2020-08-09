@@ -1,0 +1,4 @@
+﻿Model,Accuracy,Total Errors,Description+
+"DenseFloor (.1,.1)",0.9867,133,
+"DenseRef (.1,.1)",0.9869,131,
+"DropoutFloor (.1,  .1)",0.9871,129,
