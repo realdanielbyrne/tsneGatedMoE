@@ -26,45 +26,19 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Model
 from tensorflow.keras.datasets import cifar10
 from tensorflow.keras.utils import plot_model,to_categorical
-
 import os
 import numpy as np
 
-class Floor(Layer):
-  def __init__( self, 
-              zero_point = 1e-2,
-              mean_on_eval = True,
-              **kwargs):
-    super(Floor, self).__init__(**kwargs)
-    self.zero_point = zero_point
-    self.mean_on_eval = mean_on_eval
-
-  def call(self, inputs, training):
-    if not training and self.mean_on_eval:
-      return inputs
-    else:
-      # push values that are close to zero, to zero, promotes sparse models which are more efficient
-      condition = tf.less(tf.abs(inputs),self.zero_point)
-      x = tf.where(condition,tf.zeros_like(inputs),inputs)
-      return x
-
-  def get_config(self):
-    return {
-      "zero_point" : zero_point,
-      "mean_on_eval" : mean_on_eval
-    }     
-
 # training parameters
 batch_size = 32
-epochs = 30
-data_augmentation = False
-config = 'floor'
-optimizer = 'adam'
+epochs = 100
+data_augmentation = True
 
 # network parameters
 num_classes = 10
 num_dense_blocks = 3
 use_max_pool = False
+MEAN_EVAL = True
 
 # DenseNet-BC with dataset augmentation
 # Growth rate   | Depth |  Accuracy (paper)| Accuracy (this)      |
@@ -96,6 +70,39 @@ print('y_train shape:', y_train.shape)
 y_train = to_categorical(y_train, num_classes)
 y_test = to_categorical(y_test, num_classes)
 
+class Floor(Layer):
+  def __init__( self, 
+              zero_point = None,
+              mean_on_eval = MEAN_EVAL,
+
+              **kwargs):
+    super(Floor, self).__init__(**kwargs)
+    self.zero_point = zero_point
+    self.mean_on_eval = mean_on_eval 
+
+
+  def call(self, inputs, training):
+    if not training and self.mean_on_eval:
+      return inputs
+    else:
+      
+      if self.zero_point is None:
+        zero_point = tf.random.uniform([],0,.5)
+      else:
+        zero_point = self.zero_point
+
+      condition = tf.less(tf.abs(inputs), zero_point)
+      x = tf.where(condition,tf.zeros_like(inputs),inputs)
+
+      return x
+
+  def get_config(self):
+    return {
+      "zero_point" : zero_point,
+      "mean_on_eval" : mean_on_eval
+    }    
+
+
 def lr_schedule(epoch):
     """Learning Rate Schedule
 
@@ -108,7 +115,7 @@ def lr_schedule(epoch):
     # Returns
         lr (float32): learning rate
     """
-    lr = 1e-2
+    lr = 1e-3
     if epoch > 180:
         lr *= 0.5e-3
     elif epoch > 160:
@@ -142,22 +149,16 @@ for i in range(num_dense_blocks):
                    kernel_size=1,
                    padding='same',
                    kernel_initializer='he_normal')(y)
-        if not data_augmentation:
-          if config == 'dropout':
-            y = Dropout(0.2)(y)
-          else:            
-            Floor(0.2)(y)
+        
+        y = Floor(0.1)(y)
         y = BatchNormalization()(y)
         y = Activation('relu')(y)
         y = Conv2D(growth_rate,
                    kernel_size=3,
                    padding='same',
                    kernel_initializer='he_normal')(y)
-        if not data_augmentation:
-          if config == 'dropout':
-            y = Dropout(0.2)(y)
-          else:            
-            Floor(0.2)(y)
+        #if not data_augmentation:
+        y = Floor(0.1)(y)
         x = concatenate([x, y])
 
     # no transition layer after the last dense block
@@ -172,10 +173,8 @@ for i in range(num_dense_blocks):
                kernel_size=1,
                padding='same',
                kernel_initializer='he_normal')(y)
-    if not data_augmentation:
-      y = Dropout(0.2)(y)
-    else:            
-      Floor(0.2)(y)
+    #if not data_augmentation:
+    y = Floor(0.2)(y)
     x = AveragePooling2D()(y)
 
 
@@ -189,25 +188,28 @@ outputs = Dense(num_classes,
 
 # instantiate and compile model
 # orig paper uses SGD but RMSprop works better for DenseNet
-
-#lr_scheduler = LearningRateScheduler(lr_schedule)
-lr_scheduler = tf.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=1e-2,
-    decay_steps=10,
-    decay_rate=0.99,
-    staircase=True)
-
 model = Model(inputs=inputs, outputs=outputs)
-model.compile(loss='categorical_crossentropy',
-              optimizer=Adam(lr_scheduler),
-              metrics=['accuracy'])
+
+decay_steps = 4700
+optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.ExponentialDecay(
+  .001,
+  decay_steps = decay_steps,
+  decay_rate=.94,
+  staircase=False
+))
+metrics = [tf.keras.metrics.CategoricalAccuracy()]
+
+model.compile(optimizer,
+          loss = 'categorical_crossentropy',
+          metrics = metrics,
+          experimental_run_tf_function = False)
+
 model.summary()
-plot_model(model, to_file="cifar10-densenet.png", show_shapes=True)
+plot_model(model, to_file="cifar10-densenet-floor.png", show_shapes=True)
 
 # prepare model model saving directory
 save_dir = os.path.join(os.getcwd(), 'saved_models')
-
-model_name = 'cifar10_densenet_'+ config +'.h5'
+model_name = 'cifar10_densenet_floor'
 if not os.path.isdir(save_dir):
     os.makedirs(save_dir)
 filepath = os.path.join(save_dir, model_name)
@@ -216,16 +218,16 @@ filepath = os.path.join(save_dir, model_name)
 checkpoint = ModelCheckpoint(filepath=filepath,
                              monitor='val_acc',
                              verbose=1,
-                             #save_best_only = True,
-                             save_weights_only = True,)
-#model.load_weights(filepath)
+                             save_best_only=True)
+
+lr_scheduler = LearningRateScheduler(lr_schedule)
 
 lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1),
                                cooldown=0,
                                patience=5,
                                min_lr=0.5e-6)
 from datetime import datetime
-log_dir = "logs/fit/" + str(config) + datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = "logs/fit/" + model_name + datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_cb = tf.keras.callbacks.TensorBoard(
                               log_dir = log_dir, 
                               histogram_freq = 2,
@@ -234,18 +236,23 @@ tensorboard_cb = tf.keras.callbacks.TensorBoard(
                               update_freq = 'epoch')
 
 
-callbacks = [checkpoint, tensorboard_cb]
+callbacks = [tensorboard_cb]
+
 
 
 # run training, with or without data augmentation
 if not data_augmentation:
     print('Not using data augmentation.')
+
+    
     model.fit(x_train, y_train,
-              batch_size=batch_size,
-              epochs=epochs,
+              epochs = epochs,
+              batch_size = batch_size,
               validation_data=(x_test, y_test),
-              shuffle=True,
-              callbacks=callbacks)
+              shuffle = True,
+              callbacks=callbacks,
+              verbose=1
+              )              
 else:
     print('Using real-time data augmentation.')
     # preprocessing  and realtime data augmentation
@@ -270,7 +277,7 @@ else:
                         steps_per_epoch=x_train.shape[0] // batch_size,
                         validation_data=(x_test, y_test),
                         epochs=epochs, verbose=1, workers=4,
-                        callbacks=callbacks)
+                        callbacks=callbacks)                      
 
 # score trained model
 scores = model.evaluate(x_test, y_test, verbose=1)
