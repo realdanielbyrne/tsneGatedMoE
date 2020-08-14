@@ -519,7 +519,6 @@ def create_model(
     x = Dropout(.2)(x)
     for i in range(num_labels):
       x = PD(initial_values[i], 300,activation=tf.nn.relu)(x)
-
       y.append(x)
 
     x = Concatenate()(y)
@@ -623,6 +622,7 @@ def create_model(
 
     return model
 
+
   elif model_type == 'mlp-stack2':
     print('Building Encoder-MLP Stack2')
     input_dim = output_dim = x_train.shape[-1]
@@ -654,6 +654,25 @@ def create_model(
           experimental_run_tf_function = False)
 
     return model
+
+  elif model_type == 'encaug':
+    print('Encoder Data Augmentation model')
+
+    input_dim = output_dim = x_train.shape[-1]
+    model_input = keras.layers.Input(shape = (x_train.shape[-1],), name='data')
+    z_mean, z_log_var, z = encoder(model_input)
+
+    x = Concatenate()([model_input,z])
+    x = Dense(2000,activation = 'relu')(x)
+    x = Dense(300,activation = 'relu')(x)
+    x = Dense(300,activation = 'relu')(x)
+    x = Floor(_md.zero_point)(x)
+    x = Dropout(_md.dropout_rate)(x)
+    model_out = Dense(num_labels, name=_md.model_name)(x)
+
+    model = Model(model_input, model_out, name =_md.model_name )
+    return model
+
 
   elif model_type == 'conv_ref':
     print('Building Reference CONV model')
@@ -815,7 +834,7 @@ def create_vae(x_train):
       z = VarDropout(_vae.latent, name=_vae.model_type +"_zvd")(x)
       x = Activation(_vae.act)(x)
     encoder = Model(inputs, outputs=[z_mean, z_log_var, z], name=_vae.enc_name)
-    encoder.summary()
+    #encoder.summary()
 
     # Define decoder model.
     latent_in = tf.keras.Input(shape=(_vae.latent,), name="latent_in")
@@ -823,12 +842,12 @@ def create_vae(x_train):
     x = Activation(_vae.act)(x)
     outputs = Dense(input_dim, name='decoder_output', activation='sigmoid')(x)
     decoder = Model(latent_in, outputs, name=_vae.dec_name)
-    decoder.summary()
+    #decoder.summary()
 
     # Define VAE model
     outputs = decoder(encoder(inputs)[2])
     vae = tf.keras.Model(inputs, outputs, name=_vae.vae_name)
-    vae.summary()
+    #vae.summary()
 
     # Add loss
     if   _vae.loss == 'mse':
@@ -863,7 +882,7 @@ def create_vae(x_train):
 
 
 # Training settings
-EPOCHS = 100
+EPOCHS = 50
 BATCH_SIZE = 128
 VAE_EPOCHS = 10
 CUSTOM_TRAIN = False
@@ -881,7 +900,7 @@ class VaeSettings(object):
 
   loss = 'msle'
   intermediate = 512
-  latent = 16
+  latent = 8
   optimizer = tf.keras.optimizers.Adam()
   act = 'relu'
 
@@ -896,9 +915,9 @@ class VaeSettings(object):
 _vae = VaeSettings()
 
 class ModelSettings(object):
-  model_type = 'classpd'
-  zero_point = None
-  in_zero_point = None
+  model_type = 'encaug'
+  zero_point = .1
+  in_zero_point = .1
   dropout_rate = .2
   in_dropout = .2
 
@@ -909,11 +928,12 @@ class ModelSettings(object):
 
 
   loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits = True)
-  optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.ExponentialDecay(
+  optimizer = tf.keras.optimizers.Adam(
+    tf.keras.optimizers.schedules.ExponentialDecay(
     .001,
-    decay_steps=10000,
-    decay_rate=.96,
-    staircase=True
+    decay_steps=1200,
+    decay_rate=.95,
+    staircase=False
   ))
   metrics = [keras.metrics.CategoricalAccuracy()]
   act = 'relu'
