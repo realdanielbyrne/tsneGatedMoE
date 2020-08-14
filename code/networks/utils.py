@@ -11,7 +11,7 @@ from tensorflow import keras
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import cifar10, mnist, fashion_mnist
-
+from sklearn.decomposition import PCA
 EPSILON = 1e-8
 
 
@@ -342,14 +342,22 @@ def plot_encoding(encoder,
 
     filename = os.path.join(model_name, "vae_mean.png")
     # display a 2D plot of the digit classes in the latent space
-    z_mean, _, _ = encoder.predict(x_test, batch_size=batch_size)
+    _, _, z = encoder.predict(x_test, batch_size=batch_size)
+
+    if tf.shape(z)[-1] > 2:
+      print('plotting first 2 principal components')
+      pca = PCA(n_components = 2)
+      z = pca.fit_transform(z)
+
     figure = plt.figure(figsize=(10, 10))
-    plt.scatter(z_mean[:, 0], z_mean[:, 1], c=y_test)
+    plt.scatter(z[:, 0], z[:, 1], c=y_test)
     plt.colorbar()
-    plt.xlabel("z_mean")
-    plt.ylabel("z_var")
+    plt.xlabel("z[0]")
+    plt.ylabel("z[1")
+    plt.xlim(-4,4)
+    plt.ylim(-4,4)
     plt.savefig("plots/" + encoder.name )
-    return figure
+    plt.show()
 
 
 def plot_reconstruction(decoder, x_test):
