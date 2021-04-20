@@ -7,8 +7,8 @@ from datetime import datetime
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Input,Dense, Dropout, Reshape, GaussianDropout
-from tensorflow.keras.layers import Concatenate, Softmax, Conv2D, MaxPooling2D, Flatten, Layer, Multiply, Add, Subtract, Average, Activation,BatchNormalization
+from tensorflow.keras.layers import Input, Dense, Dropout, Reshape, GaussianDropout
+from tensorflow.keras.layers import Concatenate, Conv2D, MaxPooling2D, Flatten, Layer, Activation, BatchNormalization
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 from tensorflow.keras.datasets import mnist
@@ -91,17 +91,6 @@ def negative_dkl(log_alpha):
 
   dkl = k1*tf.nn.sigmoid(k2 + k3 * log_alpha) - 0.5*tf.math.log1p(tf.exp(tf.math.negative(log_alpha))) + c
   return -tf.reduce_sum(dkl)
-
-
-  def negative_dkl(self,theta,log_sigma2):
-    # Constant values for approximating the kl divergence
-    k1, k2, k3 = 0.63576, 1.8732, 1.48695
-    c = -k1
-
-    log_alpha = tf.clip_by_value(log_sigma2 - tf.math.log(tf.square(theta) + EPSILON),-ALPHA,ALPHA)
-    dkl = k1*tf.nn.sigmoid(k2 + k3 * log_alpha) - 0.5*tf.math.log1p(tf.exp(tf.math.negative(log_alpha))) + c
-    return -tf.reduce_sum(dkl)
-
 
 def custom_train(model, x_train, y_train, optimizer, x_test,y_test, loss_fn):
   # Keep results for plotting
@@ -280,17 +269,17 @@ class PD(Layer):
                 initial_values,
                 num_outputs = None,
                 activation = None,
-                zero_point = 1e-2,
+                scale = .1,
                 use_bias = True,
                 **kwargs):
     super(PD, self).__init__(**kwargs)
     self.num_outputs = num_outputs
     self.activation = activation
-    self.zero_point = zero_point
     self.use_bias = use_bias
     mean, var = initial_values
     self.mean = mean
     self.stddev = tf.sqrt(var)
+    self.scale = scal;e
 
   def build(self, input_shape):
 
@@ -311,8 +300,9 @@ class PD(Layer):
   def call(self, inputs, training = None):
 
     if training is not None:
-      f = tf.nn.sigmoid(tf.random.normal(tf.shape(self.w), mean=self.mean, stddev=self.stddev))
-      x = tf.matmul(inputs,self.w * f)
+      epsilon = tf.random.normal(shape=tf.shape(self.w))
+      p =  self.mean + tf.exp(0.5 * self.stddev) * epsilon
+      x = tf.matmul(inputs,self.w) + p * self.scale
     else:
       x = tf.matmul(inputs,self.w)
 
@@ -999,15 +989,13 @@ class VaeSettings(object):
 _vae = VaeSettings()
 
 class ModelSettings(object):
-  model_type = 'concat_floor_drop'
+  model_type = 'classpd'
 
   # dropout and floor settings
   zero_point = .1
   in_zero_point = .1
   dropout_rate = .2
   in_dropout = .1
-
-
   kld_loss = False
   enc_trainable = False
   use_bias = True
